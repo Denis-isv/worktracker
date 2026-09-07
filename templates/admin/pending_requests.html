@@ -1,0 +1,126 @@
+{% extends "base.html" %}
+{% block title %}Заявки на подтверждение{% endblock %}
+{% block content %}
+<h2>Ожидающие заявки</h2>
+
+{% if pending_schedules %}
+<h4 class="mt-4">Планы</h4>
+<table class="table">
+    <thead>
+        <tr>
+            <th>Сотрудник</th>
+            <th>Дата</th>
+            <th>План</th>
+            <th>Выходной</th>
+            <th>Действия</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for s in pending_schedules %}
+        <tr>
+            <td>{{ s.user.full_name }}</td>
+            <td>{{ s.date.strftime('%d.%m.%Y') }}</td>
+            <td>{% if not s.is_day_off %}{{ s.planned_start.strftime('%H:%M') }} - {{ s.planned_end.strftime('%H:%M') }}{% else %}—{% endif %}</td>
+            <td>{{ 'Да' if s.is_day_off else 'Нет' }}</td>
+            <td>
+                <a href="{{ url_for('admin_approve_schedule', schedule_id=s.id) }}" class="btn btn-sm btn-success">Подтвердить</a>
+                <a href="{{ url_for('admin_reject_schedule', schedule_id=s.id) }}" class="btn btn-sm btn-danger">Отклонить</a>
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endif %}
+
+{% if pending_attendances %}
+<h4 class="mt-4">Фактические отметки</h4>
+<table class="table">
+    <thead>
+        <tr>
+            <th>Сотрудник</th>
+            <th>Дата</th>
+            <th>Время</th>
+            <th>e%</th>
+            <th>Действия</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for a in pending_attendances %}
+        <tr>
+            <td>{{ a.user.full_name }}</td>
+            <td>{{ a.date.strftime('%d.%m.%Y') }}</td>
+            <td>{{ a.actual_start.strftime('%H:%M') }} - {{ a.actual_end.strftime('%H:%M') }}</td>
+            <td>{{ (a.efficiency * 100)|int }}%</td>
+            <td>
+                <a href="{{ url_for('admin_approve_attendance', attendance_id=a.id) }}" class="btn btn-sm btn-success">Подтвердить</a>
+                <a href="{{ url_for('admin_reject_attendance', attendance_id=a.id) }}" class="btn btn-sm btn-danger">Отклонить</a>
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endif %}
+
+{% if pending_absences %}
+<h4 class="mt-4">Отпуска/больничные</h4>
+<table class="table">
+    <thead>
+        <tr>
+            <th>Сотрудник</th>
+            <th>Период</th>
+            <th>Тип</th>
+            <th>Файл</th>
+            <th>Действия</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for ab in pending_absences %}
+        <tr>
+            <td>{{ ab.user.full_name }}</td>
+            <td>{{ ab.date_start.strftime('%d.%m.%Y') }} - {{ ab.date_end.strftime('%d.%m.%Y') }}</td>
+            <td>{{ ab.type|status_ru }}</td>
+            <td>
+                {% if ab.file_path %}
+                    <a href="{{ url_for('static', filename=ab.file_path) }}" target="_blank">Открыть</a>
+                {% else %}
+                    —
+                {% endif %}
+            </td>
+            <td>
+                <a href="{{ url_for('admin_approve_absence', absence_id=ab.id) }}" class="btn btn-sm btn-success">Подтвердить</a>
+                <a href="{{ url_for('admin_reject_absence', absence_id=ab.id) }}" class="btn btn-sm btn-danger">Отклонить</a>
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endif %}
+
+{% if pending_deletion_absences %}
+<h4 class="mt-4">Запросы на удаление отпусков</h4>
+<table class="table">
+    <thead>
+        <tr>
+            <th>Сотрудник</th>
+            <th>Период</th>
+            <th>Тип</th>
+            <th>Действия</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for ab in pending_deletion_absences %}
+        <tr>
+            <td>{{ ab.user.full_name }}</td>
+            <td>{{ ab.date_start.strftime('%d.%m.%Y') }} - {{ ab.date_end.strftime('%d.%m.%Y') }}</td>
+            <td>{{ ab.type|status_ru }}</td>
+            <td>
+                <a href="{{ url_for('admin_approve_absence_deletion', absence_id=ab.id) }}" class="btn btn-sm btn-success">Подтвердить удаление</a>
+                <a href="{{ url_for('admin_reject_absence_deletion', absence_id=ab.id) }}" class="btn btn-sm btn-danger">Отклонить</a>
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endif %}
+
+{% endblock %}

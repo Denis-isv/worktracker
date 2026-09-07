@@ -1,0 +1,169 @@
+{% extends "base.html" %}
+{% block title %}Расписание на неделю{% endblock %}
+{% block content %}
+<h2>Расписание на неделю</h2>
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <a href="{{ url_for('admin_weekly_schedule', offset=week_offset-1) }}" class="btn btn-outline-secondary">← Предыдущая неделя</a>
+    <span>{{ start_of_week.strftime('%d.%m.%Y') }} – {{ end_of_week.strftime('%d.%m.%Y') }}</span>
+    <a href="{{ url_for('admin_weekly_schedule', offset=week_offset+1) }}" class="btn btn-outline-secondary">Следующая неделя →</a>
+</div>
+
+<div class="row">
+    <!-- Недельное расписание (таблица) -->
+    <div class="col-md-7">
+        <h4>Недельное расписание</h4>
+        <div class="table-responsive">
+            <table class="table table-bordered table-striped table-sm">
+                <thead class="table-dark">
+                    <tr>
+                        <th>Сотрудник</th>
+                        {% for day in days %}
+                            <th class="text-center">
+                                {{ day.day_name }}<br>
+                                <small>{{ day.date.strftime('%d.%m') }}</small>
+                            </th>
+                        {% endfor %}
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for emp in employees %}
+                    <tr>
+                        <td>{{ emp.full_name }}</td>
+                        {% for day in days %}
+                            {% set data = day.plans.get(emp.id) %}
+                            {% set sch = data.schedule if data else None %}
+                            {% set att = data.attendance if data else None %}
+                            <td class="text-center" style="font-size: 0.75rem; line-height: 1.2;">
+                                {% if sch %}
+                                    {% if sch.is_day_off %}
+                                        <span class="badge bg-secondary">Выходной</span>
+                                    {% else %}
+                                        <span class="fw-bold">План:</span> {{ sch.planned_start.strftime('%H:%M') }}–{{ sch.planned_end.strftime('%H:%M') }}
+                                        {% if att and att.actual_start and att.actual_end %}
+                                            <br><span class="fw-bold text-muted">Факт:</span> <span class="text-muted">{{ att.actual_start.strftime('%H:%M') }}–{{ att.actual_end.strftime('%H:%M') }}</span>
+                                        {% endif %}
+                                    {% endif %}
+                                {% elif att %}
+                                    <span class="fw-bold text-muted">Факт:</span> <span class="text-muted">{{ att.actual_start.strftime('%H:%M') }}–{{ att.actual_end.strftime('%H:%M') }}</span>
+                                {% else %}
+                                    —
+                                {% endif %}
+                            </td>
+                        {% endfor %}
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Календарь месяца и детали дня -->
+    <div class="col-md-5">
+        <h4>Календарь месяца</h4>
+        <div class="calendar-month">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+                <span>{{ month_name }} {{ year }}</span>
+            </div>
+            <table class="table table-bordered text-center table-sm" id="calendar-table">
+                <thead>
+                    <tr>
+                        <th>Пн</th><th>Вт</th><th>Ср</th><th>Чт</th><th>Пт</th><th>Сб</th><th>Вс</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for week in month_days %}
+                    <tr>
+                        {% for day in week %}
+                            {% if day == 0 %}
+                                <td class="bg-light"></td>
+                            {% else %}
+                                <td class="position-relative calendar-day-cell" data-day="{{ day }}" style="cursor: pointer; padding: 2px;">
+                                    <span class="day-number" style="font-size: 0.8rem;">{{ day }}</span>
+                                </td>
+                            {% endif %}
+                        {% endfor %}
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <button id="close-all-days" class="btn btn-secondary btn-sm mb-2">Закрыть все дни</button>
+
+        <!-- Детали дней -->
+        {% for day in range(1, num_days + 1) %}
+            <div id="day-details-{{ day }}" class="card mt-2 day-detail-card" style="display: none;">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <span>Сотрудники {{ "%02d.%02d.%d"|format(day, month, year) }}</span>
+                    <button type="button" class="btn-close close-day-detail" data-day="{{ day }}"></button>
+                </div>
+                <div class="card-body">
+                    {% set day_plans = month_plans.get(day, []) %}
+                    {% if day_plans %}
+                        <ul class="list-group">
+                            {% for p in day_plans %}
+                                {% if p.schedule_start or p.attendance_start %}
+                                    <li class="list-group-item">
+                                        <strong>{{ p.name }}</strong>
+                                        {% if p.schedule_start and p.schedule_end %}
+                                            <br>План: {{ p.schedule_start }} – {{ p.schedule_end }}
+                                        {% elif p.schedule_is_day_off %}
+                                            <br>Выходной
+                                        {% else %}
+                                            <br>План: не указан
+                                        {% endif %}
+                                        {% if p.attendance_start and p.attendance_end %}
+                                            <br>Факт: {{ p.attendance_start }} – {{ p.attendance_end }}
+                                        {% else %}
+                                            <br>Факт: не отмечен
+                                        {% endif %}
+                                    </li>
+                                {% endif %}
+                            {% endfor %}
+                        </ul>
+                    {% else %}
+                        <p>В этот день никто не работает</p>
+                    {% endif %}
+                </div>
+            </div>
+        {% endfor %}
+    </div>
+</div>
+
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const calendarCells = document.querySelectorAll('.calendar-day-cell');
+        calendarCells.forEach(cell => {
+            cell.addEventListener('click', function() {
+                const day = this.dataset.day;
+                const details = document.getElementById('day-details-' + day);
+                if (details) {
+                    details.style.display = (details.style.display === 'none' || details.style.display === '') ? 'block' : 'none';
+                }
+            });
+        });
+
+        document.querySelectorAll('.close-day-detail').forEach(btn => {
+            btn.addEventListener('click', function() {
+                const day = this.dataset.day;
+                const details = document.getElementById('day-details-' + day);
+                if (details) {
+                    details.style.display = 'none';
+                }
+            });
+        });
+
+        document.getElementById('close-all-days').addEventListener('click', function() {
+            document.querySelectorAll('.day-detail-card').forEach(card => {
+                card.style.display = 'none';
+            });
+        });
+    });
+</script>
+
+<style>
+    .calendar-day-cell:hover {
+        background-color: #f0f0f0;
+    }
+</style>
+{% endblock %}

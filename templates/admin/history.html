@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+{% block title %}История всех заявок{% endblock %}
+{% block content %}
+<h2>Общая история</h2>
+
+<h4 class="mt-4">Планы</h4>
+{% if schedules %}
+<table class="table">
+    <thead>
+        <tr>
+            <th>Сотрудник</th>
+            <th>Дата</th>
+            <th>План</th>
+            <th>Выходной</th>
+            <th>Статус</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for s in schedules %}
+        <tr>
+            <td>{{ s.user.full_name }}</td>
+            <td>{{ s.date.strftime('%d.%m.%Y') }}</td>
+            <td>{% if not s.is_day_off %}{{ s.planned_start.strftime('%H:%M') }}–{{ s.planned_end.strftime('%H:%M') }}{% else %}—{% endif %}</td>
+            <td>{{ 'Да' if s.is_day_off else 'Нет' }}</td>
+            <td>{{ s.status|status_ru }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<p>Планов нет</p>
+{% endif %}
+
+<h4 class="mt-4">Фактические отметки</h4>
+{% if attendances %}
+<table class="table">
+    <thead>
+        <tr>
+            <th>Сотрудник</th>
+            <th>Дата</th>
+            <th>Время</th>
+            <th>e%</th>
+            <th>Статус</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for a in attendances %}
+        <tr>
+            <td>{{ a.user.full_name }}</td>
+            <td>{{ a.date.strftime('%d.%m.%Y') }}</td>
+            <td>{{ a.actual_start.strftime('%H:%M') }}–{{ a.actual_end.strftime('%H:%M') }}</td>
+            <td>{{ (a.efficiency * 100)|int }}%</td>
+            <td>{{ a.status|status_ru }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<p>Фактических отметок нет</p>
+{% endif %}
+
+<h4 class="mt-4">Отпуска/больничные</h4>
+{% if absences %}
+<table class="table">
+    <thead>
+        <tr>
+            <th>Сотрудник</th>
+            <th>Период</th>
+            <th>Тип</th>
+            <th>Статус</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for ab in absences %}
+        <tr>
+            <td>{{ ab.user.full_name }}</td>
+            <td>{{ ab.date_start.strftime('%d.%m.%Y') }} – {{ ab.date_end.strftime('%d.%m.%Y') }}</td>
+            <td>{{ ab.type|status_ru }}</td>
+            <td>{{ ab.status|status_ru }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<p>Заявок нет</p>
+{% endif %}
+
+<form action="{{ url_for('admin_clear_history') }}" method="post" class="mt-4">
+    <button type="submit" class="btn btn-danger" onclick="return confirm('Удалить ВСЮ историю? Это действие необратимо.')">Очистить всю историю</button>
+</form>
+{% endblock %}

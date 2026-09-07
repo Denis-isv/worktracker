@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}Редактировать заявку{% endblock %}
+{% block content %}
+<h2>Редактировать заявку</h2>
+<form method="POST" enctype="multipart/form-data">
+    <div class="row">
+        <div class="col">
+            <label for="date_start" class="form-label">Дата начала</label>
+            <input type="date" class="form-control" id="date_start" name="date_start" value="{{ absence.date_start.isoformat() }}" required>
+        </div>
+        <div class="col">
+            <label for="date_end" class="form-label">Дата окончания</label>
+            <input type="date" class="form-control" id="date_end" name="date_end" value="{{ absence.date_end.isoformat() }}" required>
+        </div>
+    </div>
+    <div class="mb-3">
+        <label for="type" class="form-label">Тип</label>
+        <select class="form-select" id="type" name="type" required>
+            <option value="vacation" {% if absence.type == 'vacation' %}selected{% endif %}>Отпуск</option>
+            <option value="sick" {% if absence.type == 'sick' %}selected{% endif %}>Больничный</option>
+            <option value="other" {% if absence.type == 'other' %}selected{% endif %}>Другое</option>
+        </select>
+    </div>
+    <div class="mb-3">
+        <label for="file" class="form-label">Заменить файл (если нужно)</label>
+        <input type="file" class="form-control" id="file" name="file">
+        {% if absence.file_path %}
+            <p class="mt-1"><small>Текущий файл: <a href="{{ url_for('static', filename=absence.file_path) }}" target="_blank">открыть</a></small></p>
+        {% endif %}
+    </div>
+    <button type="submit" class="btn btn-primary">Обновить и отправить на подтверждение</button>
+</form>
+{% endblock %}

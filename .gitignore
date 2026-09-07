@@ -1,0 +1,21 @@
+# Виртуальное окружение
+venv/
+env/
+
+# Файлы окружения с секретами
+.env
+
+# База данных SQLite
+*.db
+*.sqlite3
+
+# Кэш Python
+__pycache__/
+*.pyc
+
+# Папка uploads (если не хотите хранить файлы)
+static/uploads/
+
+# IDE
+.vscode/
+.idea/

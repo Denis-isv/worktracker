@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block title %}Управление пользователями{% endblock %}
+{% block content %}
+<h2>Пользователи</h2>
+<table class="table">
+    <thead>
+        <tr>
+            <th>Имя</th>
+            <th>Email</th>
+            <th>Роль</th>
+            <th>Telegram ID</th>
+            <th>Действия</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for user in users %}
+        <tr>
+            <td>{{ user.full_name }}</td>
+            <td>{{ user.email }}</td>
+            <td>{{ 'Администратор' if user.role == 'admin' else 'Сотрудник' }}</td>
+            <td>{{ user.telegram_id or '—' }}</td>
+            <td>
+                <a href="{{ url_for('admin_edit_user', user_id=user.id) }}" class="btn btn-sm btn-outline-primary">Редактировать</a>
+                {% if user.id != current_user.id %}
+                <form action="{{ url_for('admin_delete_user', user_id=user.id) }}" method="post" style="display:inline;">
+                    <button type="submit" class="btn btn-sm btn-outline-danger" onclick="return confirm('Удалить пользователя?')">Удалить</button>
+                </form>
+                {% endif %}
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+
+<hr>
+<h4>Создать нового пользователя</h4>
+<form method="POST" action="{{ url_for('admin_create_user') }}">
+    <div class="row g-2">
+        <div class="col">
+            <input type="text" class="form-control" name="full_name" placeholder="ФИО" required>
+        </div>
+        <div class="col">
+            <input type="email" class="form-control" name="email" placeholder="Email" required>
+        </div>
+        <div class="col">
+            <input type="password" class="form-control" name="password" placeholder="Пароль" required>
+        </div>
+        <div class="col">
+            <select class="form-select" name="role">
+                <option value="employee">Сотрудник</option>
+                <option value="admin">Администратор</option>
+            </select>
+        </div>
+        <div class="col">
+            <button type="submit" class="btn btn-primary">Создать</button>
+        </div>
+    </div>
+</form>
+{% endblock %}

@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+{% block title %}Мой календарь{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h1>{{ user.full_name }} — {{ month_name }} {{ year }}</h1>
+    <div>
+        <a href="{{ url_for('employee_schedule_add') }}" class="btn btn-primary">Предложить план</a>
+        <a href="{{ url_for('employee_attendance_add') }}" class="btn btn-success">Отметить факт</a>
+        <a href="{{ url_for('employee_absence_add') }}" class="btn btn-warning">Отпуск/больничный</a>
+        <a href="{{ url_for('employee_dashboard', year=prev_year, month=prev_month) }}" class="btn btn-outline-secondary">←</a>
+        <a href="{{ url_for('employee_dashboard', year=next_year, month=next_month) }}" class="btn btn-outline-secondary">→</a>
+    </div>
+</div>
+
+<table class="table table-bordered calendar-table">
+    <thead>
+        <tr class="text-center">
+            <th>Пн</th>
+            <th>Вт</th>
+            <th>Ср</th>
+            <th>Чт</th>
+            <th>Пт</th>
+            <th>Сб</th>
+            <th>Вс</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for week in month_days %}
+        <tr>
+            {% for day in week %}
+                {% if day == 0 %}
+                    <td class="bg-light"></td>
+                {% else %}
+                    <td class="position-relative">
+                        <div class="calendar-day">{{ day }}</div>
+                        {% set current_date = date(year, month, day) %}
+                        {% set schedule = schedule_by_day.get(day) %}
+                        {% set attendance = attendance_by_day.get(day) %}
+                        {% set absence = absence_by_day.get(day) %}
+
+                        {% if absence %}
+                            <span class="badge bg-secondary badge-status">{{ absence.type|status_ru }}</span>
+                            {% if absence.status != 'pending_deletion' %}
+                                <form action="{{ url_for('employee_absence_request_delete', absence_id=absence.id) }}" method="post" style="display:inline;">
+                                    <button type="submit" class="btn btn-sm btn-outline-danger p-0 px-1" onclick="return confirm('Отправить запрос на удаление этого отпуска?')">×</button>
+                                </form>
+                            {% else %}
+                                <span class="badge bg-warning text-dark">Ожидает удаления</span>
+                            {% endif %}
+                        {% endif %}
+
+                        {% if schedule %}
+                            <div>
+                                <span class="badge 
+                                    {% if schedule.status == 'approved' %}bg-success
+                                    {% elif schedule.status == 'pending' %}bg-warning text-dark
+                                    {% elif schedule.status == 'rejected' %}bg-danger
+                                    {% endif %} badge-status">
+                                    {{ schedule.status|status_ru }}
+                                </span>
+                                {% if not schedule.is_day_off and schedule.planned_start and schedule.planned_end %}
+                                    <div class="small">{{ schedule.planned_start.strftime('%H:%M') }}–{{ schedule.planned_end.strftime('%H:%M') }}</div>
+                                {% elif schedule.is_day_off %}
+                                    <div class="small">Выходной</div>
+                                {% endif %}
+                            </div>
+                        {% endif %}
+
+                        {% if attendance %}
+                            <div>
+                                <span class="badge 
+                                    {% if attendance.status == 'confirmed' %}bg-primary
+                                    {% elif attendance.status == 'pending' %}bg-warning text-dark
+                                    {% elif attendance.status == 'rejected' %}bg-danger
+                                    {% endif %} badge-status">
+                                    {{ attendance.status|status_ru }}
+                                </span>
+                                <div class="small">
+                                    {{ attendance.actual_start.strftime('%H:%M') }}–{{ attendance.actual_end.strftime('%H:%M') }}
+                                    ({{ (attendance.efficiency * 100)|int }}%)
+                                </div>
+                            </div>
+                        {% endif %}
+
+                        <div class="mt-1">
+                            <a href="{{ url_for('employee_day_edit', date=current_date.isoformat()) }}" class="btn btn-sm btn-outline-primary">Редактировать</a>
+                        </div>
+                    </td>
+                {% endif %}
+            {% endfor %}
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endblock %}

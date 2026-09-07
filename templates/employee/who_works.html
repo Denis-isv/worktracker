@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}Кто работает сегодня{% endblock %}
+{% block content %}
+<h2>Кто работает сегодня ({{ today.strftime('%d.%m.%Y') }})</h2>
+{% if working_employees %}
+<table class="table">
+    <thead>
+        <tr>
+            <th>Сотрудник</th>
+            <th>План</th>
+            <th>Факт</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for emp in working_employees %}
+        <tr>
+            <td>{{ emp.name }}</td>
+            <td>
+                {% if emp.is_day_off %}
+                    Выходной
+                {% elif emp.plan_start and emp.plan_end %}
+                    {{ emp.plan_start }} – {{ emp.plan_end }}
+                {% else %}
+                    —
+                {% endif %}
+            </td>
+            <td>
+                {% if emp.actual_start and emp.actual_end %}
+                    {{ emp.actual_start }} – {{ emp.actual_end }}
+                {% else %}
+                    —
+                {% endif %}
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<p>Сегодня никто не работает.</p>
+{% endif %}
+{% endblock %}

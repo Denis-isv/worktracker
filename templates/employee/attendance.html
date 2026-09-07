@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}Отметить факт{% endblock %}
+{% block content %}
+<h2>Отметить фактическое время</h2>
+<form method="POST">
+    <div class="mb-3">
+        <label for="date" class="form-label">Дата</label>
+        <input type="date" class="form-control" id="date" name="date" required>
+    </div>
+    <div class="row">
+        <div class="col">
+            <label for="start" class="form-label">Фактический приход</label>
+            <input type="time" class="form-control" id="start" name="start" required>
+        </div>
+        <div class="col">
+            <label for="end" class="form-label">Фактический уход</label>
+            <input type="time" class="form-control" id="end" name="end" required>
+        </div>
+    </div>
+    <div class="mb-3">
+        <label for="efficiency" class="form-label">Эффективность (%)</label>
+        <input type="number" class="form-control" id="efficiency" name="efficiency" min="0" max="100" step="1" required>
+    </div>
+    <button type="submit" class="btn btn-success">Сохранить</button>
+</form>
+{% endblock %}

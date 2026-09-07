@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container mt-4">
+    <h2>Редактировать фактическую отметку</h2>
+    <form method="POST">
+        <div class="mb-3">
+            <label class="form-label">Дата</label>
+            <input type="text" class="form-control" value="{{ attendance.date.strftime('%d.%m.%Y') }}" disabled>
+        </div>
+        <div class="mb-3">
+            <label for="start" class="form-label">Пришёл</label>
+            <input type="time" class="form-control" id="start" name="start" value="{{ attendance.actual_start.strftime('%H:%M') }}" required>
+        </div>
+        <div class="mb-3">
+            <label for="end" class="form-label">Ушёл</label>
+            <input type="time" class="form-control" id="end" name="end" value="{{ attendance.actual_end.strftime('%H:%M') }}" required>
+        </div>
+        <div class="mb-3">
+            <label for="efficiency" class="form-label">Эффективность (%)</label>
+            <input type="number" class="form-control" id="efficiency" name="efficiency" min="0" max="100" step="1" value="{{ (attendance.efficiency * 100)|round(0) }}" required>
+        </div>
+        <button type="submit" class="btn btn-primary">Обновить</button>
+        <a href="{{ url_for('employee_history') }}" class="btn btn-secondary">Отмена</a>
+    </form>
+</div>
+{% endblock %}

@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}Мои итоги месяца{% endblock %}
+{% block content %}
+<h2>Итоги за {{ month_name }} {{ year }}</h2>
+<form method="GET" class="row g-3 mb-3">
+    <div class="col-auto">
+        <label for="year" class="form-label">Год</label>
+        <input type="number" class="form-control" id="year" name="year" value="{{ year }}">
+    </div>
+    <div class="col-auto">
+        <label for="month" class="form-label">Месяц</label>
+        <select class="form-select" id="month" name="month">
+            {% for m in range(1, 13) %}
+            <option value="{{ m }}" {% if m == month %}selected{% endif %}>{{ m }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="col-auto align-self-end">
+        <button type="submit" class="btn btn-primary">Показать</button>
+    </div>
+</form>
+
+<table class="table table-bordered">
+    <tr>
+        <th>Отработано часов (без учёта e%)</th>
+        <td>{{ "%.2f"|format(summary.worked_hours) }}</td>
+    </tr>
+    <tr>
+        <th>Средний e%</th>
+        <td>{{ "%.1f"|format(summary.avg_efficiency) }}%</td>
+    </tr>
+    <tr>
+        <th>Опоздания (часов)</th>
+        <td>{{ "%.2f"|format(summary.late_hours) }}</td>
+    </tr>
+    <tr>
+        <th>Итого часов</th>
+        <td>{{ "%.2f"|format(summary.final_hours) }}</td>
+    </tr>
+</table>
+{% endblock %}

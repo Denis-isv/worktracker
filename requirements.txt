@@ -1,0 +1,7 @@
+flask
+flask-sqlalchemy
+flask-login
+flask-wtf
+python-dotenv
+python-telegram-bot
+openpyxl

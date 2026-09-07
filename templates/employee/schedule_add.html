@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}Предложить план{% endblock %}
+{% block content %}
+<h2>Предложить план на день</h2>
+<form method="POST">
+    <div class="mb-3">
+        <label for="date" class="form-label">Дата</label>
+        <input type="date" class="form-control" id="date" name="date" value="{{ form_data.date_str if form_data else default_date }}" required>
+    </div>
+    <div class="mb-3 form-check">
+        <input type="checkbox" class="form-check-input" id="is_day_off" name="is_day_off" {% if form_data and form_data.is_day_off %}checked{% endif %}>
+        <label class="form-check-label" for="is_day_off">Выходной</label>
+    </div>
+    <div class="row">
+        <div class="col">
+            <label for="start" class="form-label">Время прихода (план)</label>
+            <input type="time" class="form-control" id="start" name="start" value="{{ form_data.start_str if form_data else '' }}">
+        </div>
+        <div class="col">
+            <label for="end" class="form-label">Время ухода (план)</label>
+            <input type="time" class="form-control" id="end" name="end" value="{{ form_data.end_str if form_data else '' }}">
+        </div>
+    </div>
+    <button type="submit" class="btn btn-primary mt-3">Сохранить план</button>
+</form>
+{% endblock %}
