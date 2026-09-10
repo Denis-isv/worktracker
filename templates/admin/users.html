@@ -1,59 +1,88 @@
 {% extends "base.html" %}
-{% block title %}Управление пользователями{% endblock %}
+{% block title %}Пользователи{% endblock %}
 {% block content %}
-<h2>Пользователи</h2>
-<table class="table">
-    <thead>
-        <tr>
-            <th>Имя</th>
-            <th>Email</th>
-            <th>Роль</th>
-            <th>Telegram ID</th>
-            <th>Действия</th>
-        </tr>
-    </thead>
-    <tbody>
-        {% for user in users %}
-        <tr>
-            <td>{{ user.full_name }}</td>
-            <td>{{ user.email }}</td>
-            <td>{{ 'Администратор' if user.role == 'admin' else 'Сотрудник' }}</td>
-            <td>{{ user.telegram_id or '—' }}</td>
-            <td>
-                <a href="{{ url_for('admin_edit_user', user_id=user.id) }}" class="btn btn-sm btn-outline-primary">Редактировать</a>
-                {% if user.id != current_user.id %}
-                <form action="{{ url_for('admin_delete_user', user_id=user.id) }}" method="post" style="display:inline;">
-                    <button type="submit" class="btn btn-sm btn-outline-danger" onclick="return confirm('Удалить пользователя?')">Удалить</button>
-                </form>
-                {% endif %}
-            </td>
-        </tr>
-        {% endfor %}
-    </tbody>
-</table>
+<div class="page-header">
+    <h1><i class="bi bi-people me-2" style="color: var(--wt-primary);"></i>Управление пользователями</h1>
+</div>
 
-<hr>
-<h4>Создать нового пользователя</h4>
-<form method="POST" action="{{ url_for('admin_create_user') }}">
-    <div class="row g-2">
-        <div class="col">
-            <input type="text" class="form-control" name="full_name" placeholder="ФИО" required>
-        </div>
-        <div class="col">
-            <input type="email" class="form-control" name="email" placeholder="Email" required>
-        </div>
-        <div class="col">
-            <input type="password" class="form-control" name="password" placeholder="Пароль" required>
-        </div>
-        <div class="col">
-            <select class="form-select" name="role">
-                <option value="employee">Сотрудник</option>
-                <option value="admin">Администратор</option>
-            </select>
-        </div>
-        <div class="col">
-            <button type="submit" class="btn btn-primary">Создать</button>
+<div class="card mb-4">
+    <div class="card-header"><i class="bi bi-person-plus me-2"></i>Создать пользователя</div>
+    <div class="card-body">
+        <form method="POST" action="{{ url_for('admin_create_user') }}">
+            <div class="row g-3">
+                <div class="col-md-3">
+                    <label class="form-label">ФИО</label>
+                    <input type="text" class="form-control" name="full_name" placeholder="Иванов Иван" required>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">Email</label>
+                    <input type="email" class="form-control" name="email" placeholder="user@example.com" required>
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label">Пароль</label>
+                    <input type="password" class="form-control" name="password" required>
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label">Роль</label>
+                    <select class="form-select" name="role">
+                        <option value="employee">Сотрудник</option>
+                        <option value="admin">Администратор</option>
+                    </select>
+                </div>
+                <div class="col-md-2 d-flex align-items-end">
+                    <button type="submit" class="btn btn-primary w-100">
+                        <i class="bi bi-plus-lg"></i>Создать
+                    </button>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header"><i class="bi bi-list-ul me-2"></i>Список пользователей</div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover mb-0">
+                <thead>
+                    <tr>
+                        <th>Имя</th>
+                        <th>Email</th>
+                        <th>Роль</th>
+                        <th>Telegram ID</th>
+                        <th>Действия</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for user in users %}
+                    <tr>
+                        <td><i class="bi bi-person-circle me-2" style="color: var(--wt-primary);"></i><strong>{{ user.full_name }}</strong></td>
+                        <td>{{ user.email }}</td>
+                        <td>
+                            {% if user.role == 'admin' %}
+                                <span class="badge bg-danger">Администратор</span>
+                            {% else %}
+                                <span class="badge bg-primary">Сотрудник</span>
+                            {% endif %}
+                        </td>
+                        <td>{{ user.telegram_id or '—' }}</td>
+                        <td>
+                            <a href="{{ url_for('admin_edit_user', user_id=user.id) }}" class="btn btn-sm btn-outline-primary">
+                                <i class="bi bi-pencil"></i>Изменить
+                            </a>
+                            {% if user.id != current_user.id %}
+                            <form action="{{ url_for('admin_delete_user', user_id=user.id) }}" method="post" style="display:inline;">
+                                <button type="submit" class="btn btn-sm btn-outline-danger" onclick="return confirm('Удалить пользователя?')">
+                                    <i class="bi bi-trash"></i>
+                                </button>
+                            </form>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
         </div>
     </div>
-</form>
+</div>
 {% endblock %}

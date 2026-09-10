@@ -1,97 +1,122 @@
 {% extends "base.html" %}
 {% block title %}Заявка на отпуск/больничный{% endblock %}
 {% block content %}
-<h2>Заявка на отпуск/больничный</h2>
-<form method="POST" enctype="multipart/form-data">
-    <!-- Скрытые поля для дат -->
-    <input type="hidden" id="date_start" name="date_start" value="{{ form_data.date_start_str if form_data else '' }}">
-    <input type="hidden" id="date_end" name="date_end" value="{{ form_data.date_end_str if form_data else '' }}">
-    
-    <!-- Календарь -->
-    <div class="mb-3">
-        <label class="form-label">Выберите даты: </label>
-        <div id="absence-calendar" class="table-responsive">
-            <table class="table table-bordered text-center">
-                <thead>
-                    <tr>
-                        <th colspan="7">
-                            <span>{{ month_name }} {{ year }}</span>
-                        </th>
-                    </tr>
-                    <tr>
-                        <th>Пн</th><th>Вт</th><th>Ср</th><th>Чт</th><th>Пт</th><th>Сб</th><th>Вс</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for week in month_days %}
-                    <tr>
-                        {% for day in week %}
-                            {% if day == 0 %}
-                                <td class="bg-light"></td>
-                            {% else %}
-                                <td class="calendar-day" data-date="{{ "%04d-%02d-%02d"|format(year, month, day) }}">
-                                    {{ day }}
-                                </td>
-                            {% endif %}
+<div class="page-header">
+    <h1><i class="bi bi-airplane me-2" style="color: var(--wt-primary);"></i>Заявка на отпуск/больничный</h1>
+</div>
+
+<div class="hint mb-3"><i class="bi bi-info-circle"></i>Нажмите на день в календаре — начало, потом второй — конец диапазона</div>
+
+<div class="row g-4">
+    <div class="col-lg-7">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <a href="{{ url_for('employee_absence_add', year=prev_year, month=prev_month, date_start=form_data.date_start_str, date_end=form_data.date_end_str, type=form_data.absence_type) }}" class="btn btn-sm btn-outline-secondary">
+                    <i class="bi bi-chevron-left"></i>
+                </a>
+                <span class="fw-bold">{{ month_name }} {{ year }}</span>
+                <a href="{{ url_for('employee_absence_add', year=next_year, month=next_month, date_start=form_data.date_start_str, date_end=form_data.date_end_str, type=form_data.absence_type) }}" class="btn btn-sm btn-outline-secondary">
+                    <i class="bi bi-chevron-right"></i>
+                </a>
+            </div>
+            <div class="card-body">
+                <table class="table table-bordered text-center mb-0" id="absence-calendar" style="font-size: 0.9rem;">
+                    <thead>
+                        <tr class="table-light">
+                            <th>Пн</th><th>Вт</th><th>Ср</th><th>Чт</th><th>Пт</th><th>Сб</th><th>Вс</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for week in month_days %}
+                        <tr>
+                            {% for day in week %}
+                                {% if day == 0 %}
+                                    <td class="bg-light" style="height: 45px;"></td>
+                                {% else %}
+                                    <td class="calendar-day" data-date="{{ "%04d-%02d-%02d"|format(year, month, day) }}" style="height: 45px; cursor: pointer; padding: 6px;">
+                                        {{ day }}
+                                    </td>
+                                {% endif %}
+                            {% endfor %}
+                        </tr>
                         {% endfor %}
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
+                    </tbody>
+                </table>
+                <div id="selected-range" class="mt-3 text-muted"></div>
+            </div>
         </div>
-        <div id="selected-range" class="text-muted"></div>
     </div>
 
-    <!-- Тип -->
-    <div class="mb-3">
-        <label for="type" class="form-label">Тип</label>
-        <select class="form-select" id="type" name="type" required>
-            <option value="vacation" {% if form_data and form_data.absence_type == 'vacation' %}selected{% endif %}>Отпуск</option>
-            <option value="sick" {% if form_data and form_data.absence_type == 'sick' %}selected{% endif %}>Больничный</option>
-            <option value="other" {% if form_data and form_data.absence_type == 'other' %}selected{% endif %}>Другое</option>
-        </select>
-    </div>
+    <div class="col-lg-5">
+        <div class="card">
+            <div class="card-header"><i class="bi bi-file-earmark-text me-2"></i>Детали заявки</div>
+            <div class="card-body">
+                <form method="POST" enctype="multipart/form-data">
+                    <input type="hidden" id="date_start" name="date_start" value="{{ form_data.date_start_str }}">
+                    <input type="hidden" id="date_end" name="date_end" value="{{ form_data.date_end_str }}">
 
-    <!-- Файл -->
-    <div class="mb-3">
-        <label for="file" class="form-label">Прикрепить файл (справка)</label>
-        <input type="file" class="form-control" id="file" name="file">
+                    <div class="mb-3">
+                        <label class="form-label">Дата начала</label>
+                        <input type="text" class="form-control" id="date_start_display" value="{{ form_data.date_start_str }}" readonly>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Дата окончания</label>
+                        <input type="text" class="form-control" id="date_end_display" value="{{ form_data.date_end_str }}" readonly>
+                    </div>
+                    <div class="mb-3">
+                        <label for="type" class="form-label">Тип</label>
+                        <select class="form-select" id="type" name="type" required>
+                            <option value="vacation" {% if form_data.absence_type == 'vacation' %}selected{% endif %}>Отпуск</option>
+                            <option value="sick" {% if form_data.absence_type == 'sick' %}selected{% endif %}>Больничный</option>
+                            <option value="other" {% if form_data.absence_type == 'other' %}selected{% endif %}>Другое</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label for="file" class="form-label">Файл (справка)</label>
+                        <input type="file" class="form-control" id="file" name="file">
+                    </div>
+                    <button type="submit" class="btn btn-warning w-100">
+                        <i class="bi bi-send"></i>Отправить заявку
+                    </button>
+                </form>
+            </div>
+        </div>
     </div>
-
-    <button type="submit" class="btn btn-warning">Отправить заявку</button>
-</form>
+</div>
 
 <script>
-    let selectedStart = null;
-    let selectedEnd = null;
+    let selectedStart = document.getElementById('date_start').value || null;
+    let selectedEnd = document.getElementById('date_end').value || null;
     const startInput = document.getElementById('date_start');
     const endInput = document.getElementById('date_end');
-    const rangeDiv = document.getElementById('selected-range');
-
-    // Предзаполним из скрытых полей
-    if (startInput.value) selectedStart = startInput.value;
-    if (endInput.value) selectedEnd = endInput.value;
+    const startDisplay = document.getElementById('date_start_display');
+    const endDisplay = document.getElementById('date_end_display');
+    const infoDiv = document.getElementById('selected-range');
 
     function updateCalendar() {
         document.querySelectorAll('.calendar-day').forEach(cell => {
             const date = cell.dataset.date;
-            cell.classList.remove('selected', 'range-start', 'range-end', 'in-range');
+            cell.classList.remove('range-start', 'range-end', 'in-range');
             if (selectedStart && selectedEnd) {
-                if (date >= selectedStart && date <= selectedEnd) {
-                    cell.classList.add('in-range');
-                }
+                if (date >= selectedStart && date <= selectedEnd) cell.classList.add('in-range');
                 if (date === selectedStart) cell.classList.add('range-start');
                 if (date === selectedEnd) cell.classList.add('range-end');
             } else if (selectedStart && date === selectedStart) {
                 cell.classList.add('range-start');
             }
         });
+        startDisplay.value = selectedStart || '';
+        endDisplay.value = selectedEnd || '';
+        startInput.value = selectedStart || '';
+        endInput.value = selectedEnd || '';
         if (selectedStart && selectedEnd) {
-            rangeDiv.textContent = `Выбрано: с ${selectedStart} по ${selectedEnd}`;
+            const d1 = new Date(selectedStart), d2 = new Date(selectedEnd);
+            const days = Math.round((d2 - d1) / (1000*60*60*24)) + 1;
+            infoDiv.innerHTML = `<i class="bi bi-info-circle me-1"></i>Выбрано: ${selectedStart} – ${selectedEnd} (${days} дн.)`;
         } else if (selectedStart) {
-            rangeDiv.textContent = `Выберите конечную дату`;
+            infoDiv.innerHTML = '<i class="bi bi-info-circle me-1"></i>Выберите конечную дату';
         } else {
-            rangeDiv.textContent = '';
+            infoDiv.innerHTML = '';
         }
     }
 
@@ -99,44 +124,26 @@
         cell.addEventListener('click', function() {
             const date = this.dataset.date;
             if (!selectedStart || (selectedStart && selectedEnd)) {
-                // Начинаем новый выбор
                 selectedStart = date;
                 selectedEnd = null;
-                startInput.value = date;
-                endInput.value = '';
             } else {
-                // Второй клик – конечная дата
                 if (date < selectedStart) {
-                    // Если конечная раньше начальной, меняем местами
                     [selectedStart, selectedEnd] = [date, selectedStart];
                 } else {
                     selectedEnd = date;
                 }
-                startInput.value = selectedStart;
-                endInput.value = selectedEnd;
             }
             updateCalendar();
         });
     });
 
-    // Инициализация
     updateCalendar();
 </script>
 
 <style>
-    .calendar-day {
-        cursor: pointer;
-        padding: 8px;
-    }
-    .calendar-day:hover {
-        background-color: #f0f0f0;
-    }
-    .calendar-day.selected, .calendar-day.in-range {
-        background-color: #cce5ff;
-    }
-    .calendar-day.range-start, .calendar-day.range-end {
-        background-color: #007bff;
-        color: white;
-    }
+    .calendar-day { border-radius: 6px; transition: background 0.1s; }
+    .calendar-day:hover { background: #eef2ff; }
+    .calendar-day.in-range { background: #dbeafe; }
+    .calendar-day.range-start, .calendar-day.range-end { background: var(--wt-primary); color: white; font-weight: 600; }
 </style>
 {% endblock %}

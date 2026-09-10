@@ -4,8 +4,10 @@
 <h2>Редактирование {{ current_date.strftime('%d.%m.%Y') }}</h2>
 
 {% if absence %}
-<div class="alert alert-info">
-    На эту дату у вас утверждён отпуск/больничный. Любые изменения потребуют подтверждения администратора.
+<div class="alert alert-info d-flex align-items-center">
+    <i class="bi bi-info-circle me-2"></i>
+    <div class="flex-grow-1">На эту дату утверждён отпуск/больничный ({{ absence.type|status_ru }}).</div>
+    <a href="{{ url_for('employee_absence_edit', absence_id=absence.id) }}" class="btn btn-sm btn-outline-primary">Изменить</a>
 </div>
 {% endif %}
 

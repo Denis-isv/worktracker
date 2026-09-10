@@ -1,95 +1,105 @@
 {% extends "base.html" %}
 {% block title %}Мой календарь{% endblock %}
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-3">
-    <h1>{{ user.full_name }} — {{ month_name }} {{ year }}</h1>
+<div class="page-header">
     <div>
-        <a href="{{ url_for('employee_schedule_add') }}" class="btn btn-primary">Предложить план</a>
-        <a href="{{ url_for('employee_attendance_add') }}" class="btn btn-success">Отметить факт</a>
-        <a href="{{ url_for('employee_absence_add') }}" class="btn btn-warning">Отпуск/больничный</a>
-        <a href="{{ url_for('employee_dashboard', year=prev_year, month=prev_month) }}" class="btn btn-outline-secondary">←</a>
-        <a href="{{ url_for('employee_dashboard', year=next_year, month=next_month) }}" class="btn btn-outline-secondary">→</a>
+        <h1><i class="bi bi-calendar3 me-2" style="color: var(--wt-primary);"></i>{{ month_name }} {{ year }}</h1>
+        <p class="text-muted mb-0 mt-1">{{ user.full_name }}</p>
+    </div>
+    <div class="d-flex flex-wrap gap-2">
+        <a href="{{ url_for('employee_schedule_add') }}" class="btn btn-primary">
+            <i class="bi bi-plus-lg"></i>План
+        </a>
+        <a href="{{ url_for('employee_attendance_add') }}" class="btn btn-success">
+            <i class="bi bi-check2-circle"></i>Отметить факт
+        </a>
+        <a href="{{ url_for('employee_absence_add') }}" class="btn btn-warning">
+            <i class="bi bi-airplane"></i>Отпуск/больничный
+        </a>
+        <div class="btn-group ms-2">
+            <a href="{{ url_for('employee_dashboard', year=prev_year, month=prev_month) }}" class="btn btn-outline-secondary">
+                <i class="bi bi-chevron-left"></i>
+            </a>
+            <a href="{{ url_for('employee_day_edit', date=date.today().isoformat()) }}" class="btn btn-outline-secondary">Сегодня</a>
+            <a href="{{ url_for('employee_dashboard', year=next_year, month=next_month) }}" class="btn btn-outline-secondary">
+                <i class="bi bi-chevron-right"></i>
+            </a>
+        </div>
     </div>
 </div>
 
-<table class="table table-bordered calendar-table">
-    <thead>
-        <tr class="text-center">
-            <th>Пн</th>
-            <th>Вт</th>
-            <th>Ср</th>
-            <th>Чт</th>
-            <th>Пт</th>
-            <th>Сб</th>
-            <th>Вс</th>
-        </tr>
-    </thead>
-    <tbody>
-        {% for week in month_days %}
-        <tr>
-            {% for day in week %}
-                {% if day == 0 %}
-                    <td class="bg-light"></td>
-                {% else %}
-                    <td class="position-relative">
-                        <div class="calendar-day">{{ day }}</div>
-                        {% set current_date = date(year, month, day) %}
-                        {% set schedule = schedule_by_day.get(day) %}
-                        {% set attendance = attendance_by_day.get(day) %}
-                        {% set absence = absence_by_day.get(day) %}
+<div class="hint mb-3">
+    <i class="bi bi-info-circle"></i>Нажмите на любой день, чтобы изменить план, отметить фактическое время или добавить отпуск
+</div>
 
-                        {% if absence %}
-                            <span class="badge bg-secondary badge-status">{{ absence.type|status_ru }}</span>
-                            {% if absence.status != 'pending_deletion' %}
-                                <form action="{{ url_for('employee_absence_request_delete', absence_id=absence.id) }}" method="post" style="display:inline;">
-                                    <button type="submit" class="btn btn-sm btn-outline-danger p-0 px-1" onclick="return confirm('Отправить запрос на удаление этого отпуска?')">×</button>
-                                </form>
-                            {% else %}
-                                <span class="badge bg-warning text-dark">Ожидает удаления</span>
-                            {% endif %}
-                        {% endif %}
-
-                        {% if schedule %}
-                            <div>
-                                <span class="badge 
-                                    {% if schedule.status == 'approved' %}bg-success
-                                    {% elif schedule.status == 'pending' %}bg-warning text-dark
-                                    {% elif schedule.status == 'rejected' %}bg-danger
-                                    {% endif %} badge-status">
-                                    {{ schedule.status|status_ru }}
-                                </span>
-                                {% if not schedule.is_day_off and schedule.planned_start and schedule.planned_end %}
-                                    <div class="small">{{ schedule.planned_start.strftime('%H:%M') }}–{{ schedule.planned_end.strftime('%H:%M') }}</div>
-                                {% elif schedule.is_day_off %}
-                                    <div class="small">Выходной</div>
-                                {% endif %}
+<div class="card p-3">
+    <table class="table table-bordered calendar-table mb-0">
+        <thead>
+            <tr class="text-center">
+                <th>Пн</th><th>Вт</th><th>Ср</th><th>Чт</th><th>Пт</th><th class="text-primary">Сб</th><th class="text-danger">Вс</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for week in month_days %}
+            <tr>
+                {% for day in week %}
+                    {% if day == 0 %}
+                        <td class="bg-light" style="height: 110px;"></td>
+                    {% else %}
+                        <td class="position-relative" style="height: 110px; padding: 8px;">
+                            <div class="d-flex justify-content-between align-items-start">
+                                <span class="calendar-day">{{ day }}</span>
+                                <a href="{{ url_for('employee_day_edit', date=date(year, month, day).isoformat()) }}" class="btn btn-sm btn-outline-primary" style="padding: 0.1rem 0.4rem; font-size: 0.75rem;" title="Редактировать день">
+                                    <i class="bi bi-pencil"></i>
+                                </a>
                             </div>
-                        {% endif %}
+                            {% set schedule = schedule_by_day.get(day) %}
+                            {% set attendance = attendance_by_day.get(day) %}
+                            {% set absence = absence_by_day.get(day) %}
 
-                        {% if attendance %}
-                            <div>
-                                <span class="badge 
-                                    {% if attendance.status == 'confirmed' %}bg-primary
-                                    {% elif attendance.status == 'pending' %}bg-warning text-dark
-                                    {% elif attendance.status == 'rejected' %}bg-danger
-                                    {% endif %} badge-status">
-                                    {{ attendance.status|status_ru }}
-                                </span>
-                                <div class="small">
-                                    {{ attendance.actual_start.strftime('%H:%M') }}–{{ attendance.actual_end.strftime('%H:%M') }}
-                                    ({{ (attendance.efficiency * 100)|int }}%)
+                            {% if absence %}
+                                <div class="mt-1">
+                                    <span class="badge bg-secondary badge-status">
+                                        <i class="bi bi-airplane me-1"></i>{{ absence.type|status_ru }}
+                                    </span>
                                 </div>
-                            </div>
-                        {% endif %}
+                            {% endif %}
 
-                        <div class="mt-1">
-                            <a href="{{ url_for('employee_day_edit', date=current_date.isoformat()) }}" class="btn btn-sm btn-outline-primary">Редактировать</a>
-                        </div>
-                    </td>
-                {% endif %}
+                            {% if schedule %}
+                                <div class="mt-1">
+                                    {% if schedule.is_day_off %}
+                                        <span class="badge bg-light text-dark badge-status">Выходной</span>
+                                    {% else %}
+                                        <span class="badge bg-success badge-status">
+                                            <i class="bi bi-briefcase me-1"></i>{{ schedule.planned_start.strftime('%H:%M') }}–{{ schedule.planned_end.strftime('%H:%M') }}
+                                        </span>
+                                    {% endif %}
+                                </div>
+                            {% endif %}
+
+                            {% if attendance %}
+                                <div class="mt-1">
+                                    <span class="badge 
+                                        {% if attendance.status == 'confirmed' %}bg-primary
+                                        {% elif attendance.status == 'pending' %}bg-warning text-dark
+                                        {% else %}bg-danger{% endif %} badge-status">
+                                        <i class="bi bi-clock me-1"></i>{{ attendance.actual_start.strftime('%H:%M') }}–{{ attendance.actual_end.strftime('%H:%M') }}
+                                    </span>
+                                    <div class="text-muted" style="font-size: 0.7rem;">e%: {{ (attendance.efficiency * 100)|int }}%</div>
+                                </div>
+                            {% endif %}
+                        </td>
+                    {% endif %}
+                {% endfor %}
+            </tr>
             {% endfor %}
-        </tr>
-        {% endfor %}
-    </tbody>
-</table>
+        </tbody>
+    </table>
+</div>
+
+<style>
+    .calendar-table td { vertical-align: top; }
+    .calendar-table .calendar-day { font-weight: 700; font-size: 1rem; }
+    .calendar-table td:hover { background: #f8fafc; }
+</style>
 {% endblock %}

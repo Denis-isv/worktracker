@@ -684,8 +684,18 @@ def employee_absence_add():
     month = request.args.get('month', today.month, type=int)
     if month < 1 or month > 12:
         month = today.month
-    cal = calendar.Calendar()
-    month_days = cal.monthdayscalendar(year, month)
+
+    month_days = calendar.Calendar().monthdayscalendar(year, month)
+
+    # Навигация
+    if month == 1:
+        prev_year, prev_month = year - 1, 12
+    else:
+        prev_year, prev_month = year, month - 1
+    if month == 12:
+        next_year, next_month = year + 1, 1
+    else:
+        next_year, next_month = year, month + 1
 
     form_data = {}
     if request.method == 'POST':
@@ -701,22 +711,20 @@ def employee_absence_add():
         if not date_start_str or not date_end_str or not absence_type:
             flash('Заполните все поля', 'danger')
             return render_template('employee/absence_add.html',
-                                   form_data=form_data,
-                                   year=year,
-                                   month=month,
-                                   month_days=month_days,
-                                   month_name=MONTHS_RU[month-1])
+                                   form_data=form_data, year=year, month=month,
+                                   month_days=month_days, month_name=MONTHS_RU[month-1],
+                                   prev_year=prev_year, prev_month=prev_month,
+                                   next_year=next_year, next_month=next_month)
         try:
             date_start = datetime.strptime(date_start_str, '%Y-%m-%d').date()
             date_end = datetime.strptime(date_end_str, '%Y-%m-%d').date()
             if date_start > date_end:
                 flash('Дата начала позже даты окончания', 'danger')
                 return render_template('employee/absence_add.html',
-                                       form_data=form_data,
-                                       year=year,
-                                       month=month,
-                                       month_days=month_days,
-                                       month_name=MONTHS_RU[month-1])
+                                       form_data=form_data, year=year, month=month,
+                                       month_days=month_days, month_name=MONTHS_RU[month-1],
+                                       prev_year=prev_year, prev_month=prev_month,
+                                       next_year=next_year, next_month=next_month)
 
             file_path = None
             if file:
@@ -753,18 +761,22 @@ def employee_absence_add():
             db.session.rollback()
             flash(f'Ошибка: {e}', 'danger')
             return render_template('employee/absence_add.html',
-                                   form_data=form_data,
-                                   year=year,
-                                   month=month,
-                                   month_days=month_days,
-                                   month_name=MONTHS_RU[month-1])
+                                   form_data=form_data, year=year, month=month,
+                                   month_days=month_days, month_name=MONTHS_RU[month-1],
+                                   prev_year=prev_year, prev_month=prev_month,
+                                   next_year=next_year, next_month=next_month)
 
+    # GET — берём значения из URL, чтобы сохранить при навигации по месяцам
+    form_data = {
+        'date_start_str': request.args.get('date_start', ''),
+        'date_end_str': request.args.get('date_end', ''),
+        'absence_type': request.args.get('type', '')
+    }
     return render_template('employee/absence_add.html',
-                           form_data=form_data,
-                           year=year,
-                           month=month,
-                           month_days=month_days,
-                           month_name=MONTHS_RU[month-1])
+                           form_data=form_data, year=year, month=month,
+                           month_days=month_days, month_name=MONTHS_RU[month-1],
+                           prev_year=prev_year, prev_month=prev_month,
+                           next_year=next_year, next_month=next_month)
 
 @app.route('/employee/absence/<int:absence_id>/edit', methods=['GET', 'POST'])
 @login_required
@@ -777,6 +789,27 @@ def employee_absence_edit(absence_id):
     if absence.user_id != current_user.id:
         abort(403)
 
+    today = date.today()
+    # По умолчанию открываем месяц начала отпуска
+    default_year = absence.date_start.year if absence.date_start else today.year
+    default_month = absence.date_start.month if absence.date_start else today.month
+
+    year = request.args.get('year', default_year, type=int)
+    month = request.args.get('month', default_month, type=int)
+    if month < 1 or month > 12:
+        month = today.month
+
+    month_days = calendar.Calendar().monthdayscalendar(year, month)
+
+    if month == 1:
+        prev_year, prev_month = year - 1, 12
+    else:
+        prev_year, prev_month = year, month - 1
+    if month == 12:
+        next_year, next_month = year + 1, 1
+    else:
+        next_year, next_month = year, month + 1
+
     if request.method == 'POST':
         date_start_str = request.form.get('date_start')
         date_end_str = request.form.get('date_end')
@@ -785,14 +818,16 @@ def employee_absence_edit(absence_id):
 
         if not date_start_str or not date_end_str or not absence_type:
             flash('Заполните все поля', 'danger')
-            return redirect(url_for('employee_absence_edit', absence_id=absence.id))
+            return redirect(url_for('employee_absence_edit', absence_id=absence.id,
+                                    year=year, month=month))
 
         try:
             date_start = datetime.strptime(date_start_str, '%Y-%m-%d').date()
             date_end = datetime.strptime(date_end_str, '%Y-%m-%d').date()
             if date_start > date_end:
                 flash('Дата начала позже даты окончания', 'danger')
-                return redirect(url_for('employee_absence_edit', absence_id=absence.id))
+                return redirect(url_for('employee_absence_edit', absence_id=absence.id,
+                                        year=year, month=month))
 
             file_path = absence.file_path
             if file:
@@ -826,7 +861,20 @@ def employee_absence_edit(absence_id):
             db.session.rollback()
             flash(f'Ошибка: {e}', 'danger')
 
-    return render_template('employee/absence_edit.html', absence=absence)
+    return render_template(
+        'employee/absence_edit.html',
+        absence=absence,
+        year=year,
+        month=month,
+        month_days=month_days,
+        month_name=MONTHS_RU[month-1],
+        prev_year=prev_year,
+        prev_month=prev_month,
+        next_year=next_year,
+        next_month=next_month,
+        selected_start=absence.date_start.isoformat() if absence.date_start else '',
+        selected_end=absence.date_end.isoformat() if absence.date_end else ''
+    )
 
 # ---------- АДМИНИСТРАТОР ----------
 
@@ -863,17 +911,99 @@ def admin_pending_requests():
         flash('Доступ запрещён', 'danger')
         return redirect(url_for('index'))
 
-    pending_schedules = Schedule.query.filter_by(status='pending').order_by(Schedule.date).all()
-    pending_absences = Absence.query.filter_by(status='pending').order_by(Absence.date_start).all()
-    pending_attendances = Attendance.query.filter_by(status='pending').order_by(Attendance.date).all()
-    pending_deletion_absences = Absence.query.filter_by(status='pending_deletion').order_by(Absence.date_start).all()
+    today = date.today()
+    cal_year = request.args.get('cal_year', today.year, type=int)
+    cal_month = request.args.get('cal_month', today.month, type=int)
+    if cal_month < 1 or cal_month > 12:
+        cal_month = today.month
+
+    # Флаг: показать все заявки (без фильтрации по месяцу)
+    show_all = request.args.get('show_all', '0') == '1'
+
+    first_day = date(cal_year, cal_month, 1)
+    last_day = date(cal_year, cal_month, calendar.monthrange(cal_year, cal_month)[1])
+
+    if show_all:
+        pending_schedules = Schedule.query.filter_by(status='pending').order_by(Schedule.date).all()
+        pending_attendances = Attendance.query.filter_by(status='pending').order_by(Attendance.date).all()
+        pending_absences = Absence.query.filter_by(status='pending').order_by(Absence.date_start).all()
+        pending_deletion_absences = Absence.query.filter_by(status='pending_deletion').order_by(Absence.date_start).all()
+    else:
+        pending_schedules = Schedule.query.filter(
+            Schedule.status == 'pending',
+            Schedule.date >= first_day,
+            Schedule.date <= last_day
+        ).order_by(Schedule.date).all()
+
+        pending_attendances = Attendance.query.filter(
+            Attendance.status == 'pending',
+            Attendance.date >= first_day,
+            Attendance.date <= last_day
+        ).order_by(Attendance.date).all()
+
+        pending_absences = Absence.query.filter(
+            Absence.status == 'pending',
+            Absence.date_start <= last_day,
+            Absence.date_end >= first_day
+        ).order_by(Absence.date_start).all()
+
+        pending_deletion_absences = Absence.query.filter(
+            Absence.status == 'pending_deletion',
+            Absence.date_start <= last_day,
+            Absence.date_end >= first_day
+        ).order_by(Absence.date_start).all()
+
+    # Календарь
+    month_days = calendar.Calendar().monthdayscalendar(cal_year, cal_month)
+
+    # Подсветка дней с заявками (всегда по выбранному месяцу)
+    days_with_requests = {}
+    all_pending_schedules = Schedule.query.filter_by(status='pending').all()
+    all_pending_attendances = Attendance.query.filter_by(status='pending').all()
+    all_pending_absences = Absence.query.filter_by(status='pending').all()
+    all_pending_deletions = Absence.query.filter_by(status='pending_deletion').all()
+
+    for s in all_pending_schedules:
+        if s.date.year == cal_year and s.date.month == cal_month:
+            d = days_with_requests.setdefault(s.date.day, {'schedule': 0, 'attendance': 0, 'absence': 0})
+            d['schedule'] += 1
+    for a in all_pending_attendances:
+        if a.date.year == cal_year and a.date.month == cal_month:
+            d = days_with_requests.setdefault(a.date.day, {'schedule': 0, 'attendance': 0, 'absence': 0})
+            d['attendance'] += 1
+    for ab in all_pending_absences + all_pending_deletions:
+        d_cur = ab.date_start
+        while d_cur <= ab.date_end:
+            if d_cur.year == cal_year and d_cur.month == cal_month:
+                d = days_with_requests.setdefault(d_cur.day, {'schedule': 0, 'attendance': 0, 'absence': 0})
+                d['absence'] += 1
+            d_cur += timedelta(days=1)
+
+    if cal_month == 1:
+        prev_year, prev_month = cal_year - 1, 12
+    else:
+        prev_year, prev_month = cal_year, cal_month - 1
+    if cal_month == 12:
+        next_year, next_month = cal_year + 1, 1
+    else:
+        next_year, next_month = cal_year, cal_month + 1
 
     return render_template(
         'admin/pending_requests.html',
         pending_schedules=pending_schedules,
         pending_absences=pending_absences,
         pending_attendances=pending_attendances,
-        pending_deletion_absences=pending_deletion_absences
+        pending_deletion_absences=pending_deletion_absences,
+        calendar_year=cal_year,
+        calendar_month=cal_month,
+        calendar_month_name=MONTHS_RU[cal_month - 1],
+        calendar_days=month_days,
+        days_with_requests=days_with_requests,
+        prev_year=prev_year,
+        prev_month=prev_month,
+        next_year=next_year,
+        next_month=next_month,
+        show_all=show_all
     )
 
 @app.route('/admin/approve_schedule/<int:schedule_id>')
@@ -882,23 +1012,14 @@ def admin_approve_schedule(schedule_id):
     if current_user.role != 'admin':
         flash('Доступ запрещён', 'danger')
         return redirect(url_for('index'))
-
     schedule = Schedule.query.get_or_404(schedule_id)
     schedule.status = 'approved'
     db.session.commit()
-
-    change = ChangeLog(
-        user_id=current_user.id,
-        target_user_id=schedule.user_id,
-        field_changed='schedule_approve',
-        old_value='pending',
-        new_value='approved'
-    )
+    change = ChangeLog(user_id=current_user.id, target_user_id=schedule.user_id, field_changed='schedule_approve', old_value='pending', new_value='approved')
     db.session.add(change)
     db.session.commit()
-
     flash('План подтверждён', 'success')
-    return redirect(url_for('admin_pending_requests'))
+    return redirect(url_for('admin_pending_requests', cal_year=request.args.get('cal_year'), cal_month=request.args.get('cal_month'), show_all=request.args.get('show_all', '0')))
 
 @app.route('/admin/reject_schedule/<int:schedule_id>')
 @login_required
@@ -906,23 +1027,14 @@ def admin_reject_schedule(schedule_id):
     if current_user.role != 'admin':
         flash('Доступ запрещён', 'danger')
         return redirect(url_for('index'))
-
     schedule = Schedule.query.get_or_404(schedule_id)
     schedule.status = 'rejected'
     db.session.commit()
-
-    change = ChangeLog(
-        user_id=current_user.id,
-        target_user_id=schedule.user_id,
-        field_changed='schedule_reject',
-        old_value='pending',
-        new_value='rejected'
-    )
+    change = ChangeLog(user_id=current_user.id, target_user_id=schedule.user_id, field_changed='schedule_reject', old_value='pending', new_value='rejected')
     db.session.add(change)
     db.session.commit()
-
     flash('План отклонён', 'warning')
-    return redirect(url_for('admin_pending_requests'))
+    return redirect(url_for('admin_pending_requests', cal_year=request.args.get('cal_year'), cal_month=request.args.get('cal_month'), show_all=request.args.get('show_all', '0')))
 
 @app.route('/admin/approve_absence/<int:absence_id>')
 @login_required
@@ -930,23 +1042,14 @@ def admin_approve_absence(absence_id):
     if current_user.role != 'admin':
         flash('Доступ запрещён', 'danger')
         return redirect(url_for('index'))
-
     absence = Absence.query.get_or_404(absence_id)
     absence.status = 'approved'
     db.session.commit()
-
-    change = ChangeLog(
-        user_id=current_user.id,
-        target_user_id=absence.user_id,
-        field_changed='absence_approve',
-        old_value='pending',
-        new_value='approved'
-    )
+    change = ChangeLog(user_id=current_user.id, target_user_id=absence.user_id, field_changed='absence_approve', old_value='pending', new_value='approved')
     db.session.add(change)
     db.session.commit()
-
     flash('Отпуск/больничный подтверждён', 'success')
-    return redirect(url_for('admin_pending_requests'))
+    return redirect(url_for('admin_pending_requests', cal_year=request.args.get('cal_year'), cal_month=request.args.get('cal_month'), show_all=request.args.get('show_all', '0')))
 
 @app.route('/admin/reject_absence/<int:absence_id>')
 @login_required
@@ -954,23 +1057,14 @@ def admin_reject_absence(absence_id):
     if current_user.role != 'admin':
         flash('Доступ запрещён', 'danger')
         return redirect(url_for('index'))
-
     absence = Absence.query.get_or_404(absence_id)
     absence.status = 'rejected'
     db.session.commit()
-
-    change = ChangeLog(
-        user_id=current_user.id,
-        target_user_id=absence.user_id,
-        field_changed='absence_reject',
-        old_value='pending',
-        new_value='rejected'
-    )
+    change = ChangeLog(user_id=current_user.id, target_user_id=absence.user_id, field_changed='absence_reject', old_value='pending', new_value='rejected')
     db.session.add(change)
     db.session.commit()
-
     flash('Отпуск/больничный отклонён', 'warning')
-    return redirect(url_for('admin_pending_requests'))
+    return redirect(url_for('admin_pending_requests', cal_year=request.args.get('cal_year'), cal_month=request.args.get('cal_month'), show_all=request.args.get('show_all', '0')))
 
 @app.route('/admin/approve_attendance/<int:attendance_id>')
 @login_required
@@ -978,23 +1072,14 @@ def admin_approve_attendance(attendance_id):
     if current_user.role != 'admin':
         flash('Доступ запрещён', 'danger')
         return redirect(url_for('index'))
-
     attendance = Attendance.query.get_or_404(attendance_id)
     attendance.status = 'confirmed'
     db.session.commit()
-
-    change = ChangeLog(
-        user_id=current_user.id,
-        target_user_id=attendance.user_id,
-        field_changed='attendance_approve',
-        old_value='pending',
-        new_value='confirmed'
-    )
+    change = ChangeLog(user_id=current_user.id, target_user_id=attendance.user_id, field_changed='attendance_approve', old_value='pending', new_value='confirmed')
     db.session.add(change)
     db.session.commit()
-
     flash('Фактическое время подтверждено', 'success')
-    return redirect(url_for('admin_pending_requests'))
+    return redirect(url_for('admin_pending_requests', cal_year=request.args.get('cal_year'), cal_month=request.args.get('cal_month'), show_all=request.args.get('show_all', '0')))
 
 @app.route('/admin/reject_attendance/<int:attendance_id>')
 @login_required
@@ -1002,23 +1087,44 @@ def admin_reject_attendance(attendance_id):
     if current_user.role != 'admin':
         flash('Доступ запрещён', 'danger')
         return redirect(url_for('index'))
-
     attendance = Attendance.query.get_or_404(attendance_id)
     attendance.status = 'rejected'
     db.session.commit()
-
-    change = ChangeLog(
-        user_id=current_user.id,
-        target_user_id=attendance.user_id,
-        field_changed='attendance_reject',
-        old_value='pending',
-        new_value='rejected'
-    )
+    change = ChangeLog(user_id=current_user.id, target_user_id=attendance.user_id, field_changed='attendance_reject', old_value='pending', new_value='rejected')
     db.session.add(change)
     db.session.commit()
-
     flash('Фактическое время отклонено', 'warning')
-    return redirect(url_for('admin_pending_requests'))
+    return redirect(url_for('admin_pending_requests', cal_year=request.args.get('cal_year'), cal_month=request.args.get('cal_month'), show_all=request.args.get('show_all', '0')))
+
+@app.route('/admin/approve_absence_deletion/<int:absence_id>')
+@login_required
+def admin_approve_absence_deletion(absence_id):
+    if current_user.role != 'admin':
+        flash('Доступ запрещён', 'danger')
+        return redirect(url_for('index'))
+    absence = Absence.query.get_or_404(absence_id)
+    if absence.status == 'pending_deletion':
+        db.session.delete(absence)
+        db.session.commit()
+        flash('Отпуск удалён', 'success')
+    else:
+        flash('Нет запроса на удаление', 'warning')
+    return redirect(url_for('admin_pending_requests', cal_year=request.args.get('cal_year'), cal_month=request.args.get('cal_month'), show_all=request.args.get('show_all', '0')))
+
+@app.route('/admin/reject_absence_deletion/<int:absence_id>')
+@login_required
+def admin_reject_absence_deletion(absence_id):
+    if current_user.role != 'admin':
+        flash('Доступ запрещён', 'danger')
+        return redirect(url_for('index'))
+    absence = Absence.query.get_or_404(absence_id)
+    if absence.status == 'pending_deletion':
+        absence.status = 'approved' if absence.file_path else 'rejected'
+        db.session.commit()
+        flash('Запрос на удаление отклонён', 'warning')
+    else:
+        flash('Нет запроса на удаление', 'warning')
+    return redirect(url_for('admin_pending_requests', cal_year=request.args.get('cal_year'), cal_month=request.args.get('cal_month'), show_all=request.args.get('show_all', '0')))
 
 @app.route('/admin/history')
 @login_required
@@ -1583,33 +1689,3 @@ def employee_absence_request_delete(absence_id):
         db.session.commit()
         flash('Запрос на удаление отправлен администратору', 'warning')
     return redirect(url_for('employee_history'))
-
-@app.route('/admin/approve_absence_deletion/<int:absence_id>')
-@login_required
-def admin_approve_absence_deletion(absence_id):
-    if current_user.role != 'admin':
-        flash('Доступ запрещён', 'danger')
-        return redirect(url_for('index'))
-    absence = Absence.query.get_or_404(absence_id)
-    if absence.status == 'pending_deletion':
-        db.session.delete(absence)
-        db.session.commit()
-        flash('Отпуск удалён', 'success')
-    else:
-        flash('Нет запроса на удаление', 'warning')
-    return redirect(url_for('admin_pending_requests'))
-
-@app.route('/admin/reject_absence_deletion/<int:absence_id>')
-@login_required
-def admin_reject_absence_deletion(absence_id):
-    if current_user.role != 'admin':
-        flash('Доступ запрещён', 'danger')
-        return redirect(url_for('index'))
-    absence = Absence.query.get_or_404(absence_id)
-    if absence.status == 'pending_deletion':
-        absence.status = 'approved' if absence.file_path else 'rejected'
-        db.session.commit()
-        flash('Запрос на удаление отклонён', 'warning')
-    else:
-        flash('Нет запроса на удаление', 'warning')
-    return redirect(url_for('admin_pending_requests'))
