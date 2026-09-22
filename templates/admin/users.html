@@ -29,12 +29,17 @@
                         <option value="admin">Администратор</option>
                     </select>
                 </div>
+<<<<<<< HEAD
                 <div class="col-md-2">
                     <label class="form-label">Telegram ID</label>
                     <input type="text" class="form-control" name="telegram_id" placeholder="@username">
                 </div>
                 <div class="col-12">
                     <button type="submit" class="btn btn-primary">
+=======
+                <div class="col-md-2 d-flex align-items-end">
+                    <button type="submit" class="btn btn-primary w-100">
+>>>>>>> 5f8a7730096432ab1a144800397b81ce1675c230
                         <i class="bi bi-plus-lg"></i>Создать
                     </button>
                 </div>
@@ -69,6 +74,7 @@
                                 <span class="badge bg-primary">Сотрудник</span>
                             {% endif %}
                         </td>
+<<<<<<< HEAD
                         <td>
                             {% if user.telegram_id %}
                                 <span class="badge bg-info text-dark">{{ user.telegram_id }}</span>
@@ -76,6 +82,9 @@
                                 <span class="text-muted">—</span>
                             {% endif %}
                         </td>
+=======
+                        <td>{{ user.telegram_id or '—' }}</td>
+>>>>>>> 5f8a7730096432ab1a144800397b81ce1675c230
                         <td>
                             <a href="{{ url_for('admin_edit_user', user_id=user.id) }}" class="btn btn-sm btn-outline-primary">
                                 <i class="bi bi-pencil"></i>Изменить

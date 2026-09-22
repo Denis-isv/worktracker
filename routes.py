@@ -687,6 +687,10 @@ def employee_absence_add():
 
     month_days = calendar.Calendar().monthdayscalendar(year, month)
 
+<<<<<<< HEAD
+=======
+    # Навигация
+>>>>>>> 5f8a7730096432ab1a144800397b81ce1675c230
     if month == 1:
         prev_year, prev_month = year - 1, 12
     else:
@@ -701,6 +705,7 @@ def employee_absence_add():
         date_start_str = request.form.get('date_start')
         date_end_str = request.form.get('date_end')
         absence_type = request.form.get('type')
+<<<<<<< HEAD
         custom_type = request.form.get('custom_type', '').strip()
         file = request.files.get('file')
 
@@ -711,6 +716,14 @@ def employee_absence_add():
             'custom_type': custom_type
         }
 
+=======
+        file = request.files.get('file')
+        form_data = {
+            'date_start_str': date_start_str,
+            'date_end_str': date_end_str,
+            'absence_type': absence_type
+        }
+>>>>>>> 5f8a7730096432ab1a144800397b81ce1675c230
         if not date_start_str or not date_end_str or not absence_type:
             flash('Заполните все поля', 'danger')
             return render_template('employee/absence_add.html',
@@ -718,6 +731,7 @@ def employee_absence_add():
                                    month_days=month_days, month_name=MONTHS_RU[month-1],
                                    prev_year=prev_year, prev_month=prev_month,
                                    next_year=next_year, next_month=next_month)
+<<<<<<< HEAD
 
         if absence_type == 'other' and not custom_type:
             flash('Укажите, что именно (например, «отгул», «учёба»)', 'danger')
@@ -727,6 +741,8 @@ def employee_absence_add():
                                    prev_year=prev_year, prev_month=prev_month,
                                    next_year=next_year, next_month=next_month)
 
+=======
+>>>>>>> 5f8a7730096432ab1a144800397b81ce1675c230
         try:
             date_start = datetime.strptime(date_start_str, '%Y-%m-%d').date()
             date_end = datetime.strptime(date_end_str, '%Y-%m-%d').date()
@@ -751,24 +767,55 @@ def employee_absence_add():
                 date_start=date_start,
                 date_end=date_end,
                 type=absence_type,
+<<<<<<< HEAD
                 custom_type=custom_type if absence_type == 'other' else None,
+=======
+>>>>>>> 5f8a7730096432ab1a144800397b81ce1675c230
                 status='pending',
                 file_path=file_path
             )
             db.session.add(absence)
             db.session.commit()
 
+<<<<<<< HEAD
             flash('Заявка отправлена', 'success')
+=======
+            change = ChangeLog(
+                user_id=current_user.id,
+                target_user_id=current_user.id,
+                field_changed='absence_add',
+                old_value='',
+                new_value=f'{date_start} - {date_end} ({absence_type})'
+            )
+            db.session.add(change)
+            db.session.commit()
+
+            flash('Заявка на отпуск/больничный отправлена', 'success')
+>>>>>>> 5f8a7730096432ab1a144800397b81ce1675c230
             return redirect(url_for('employee_dashboard'))
         except Exception as e:
             db.session.rollback()
             flash(f'Ошибка: {e}', 'danger')
+<<<<<<< HEAD
 
     form_data = {
         'date_start_str': request.args.get('date_start', ''),
         'date_end_str': request.args.get('date_end', ''),
         'absence_type': request.args.get('type', ''),
         'custom_type': ''
+=======
+            return render_template('employee/absence_add.html',
+                                   form_data=form_data, year=year, month=month,
+                                   month_days=month_days, month_name=MONTHS_RU[month-1],
+                                   prev_year=prev_year, prev_month=prev_month,
+                                   next_year=next_year, next_month=next_month)
+
+    # GET — берём значения из URL, чтобы сохранить при навигации по месяцам
+    form_data = {
+        'date_start_str': request.args.get('date_start', ''),
+        'date_end_str': request.args.get('date_end', ''),
+        'absence_type': request.args.get('type', '')
+>>>>>>> 5f8a7730096432ab1a144800397b81ce1675c230
     }
     return render_template('employee/absence_add.html',
                            form_data=form_data, year=year, month=month,
@@ -1167,6 +1214,40 @@ def admin_users():
     users = User.query.all()
     return render_template('admin/users.html', users=users)
 
+<<<<<<< HEAD
+=======
+@app.route('/admin/users/create', methods=['POST'])
+@login_required
+def admin_create_user():
+    if current_user.role != 'admin':
+        flash('Доступ запрещён', 'danger')
+        return redirect(url_for('index'))
+
+    full_name = request.form.get('full_name')
+    email = request.form.get('email')
+    password = request.form.get('password')
+    role = request.form.get('role', 'employee')
+
+    if not full_name or not email or not password:
+        flash('Заполните все поля', 'danger')
+        return redirect(url_for('admin_users'))
+
+    if User.query.filter_by(email=email).first():
+        flash('Пользователь с таким email уже существует', 'danger')
+        return redirect(url_for('admin_users'))
+
+    user = User(
+        full_name=full_name,
+        email=email,
+        password_hash=generate_password_hash(password),
+        role=role
+    )
+    db.session.add(user)
+    db.session.commit()
+
+    flash('Пользователь создан', 'success')
+    return redirect(url_for('admin_users'))
+>>>>>>> 5f8a7730096432ab1a144800397b81ce1675c230
 
 @app.route('/admin/users/<int:user_id>/delete', methods=['POST'])
 @login_required
@@ -1190,6 +1271,7 @@ def admin_delete_user(user_id):
     flash(f'Пользователь {user.full_name} удалён', 'success')
     return redirect(url_for('admin_users'))
 
+<<<<<<< HEAD
 @app.route('/admin/users/create', methods=['POST'])
 @login_required
 def admin_create_user():
@@ -1234,6 +1316,8 @@ def admin_create_user():
     return redirect(url_for('admin_users'))
 
 
+=======
+>>>>>>> 5f8a7730096432ab1a144800397b81ce1675c230
 @app.route('/admin/users/<int:user_id>/edit', methods=['GET', 'POST'])
 @login_required
 def admin_edit_user(user_id):
@@ -1248,11 +1332,15 @@ def admin_edit_user(user_id):
         email = request.form.get('email')
         password = request.form.get('password')
         role = request.form.get('role')
+<<<<<<< HEAD
         telegram_id = request.form.get('telegram_id', '').strip()
 
         # Нормализация @
         if telegram_id and not telegram_id.startswith('@'):
             telegram_id = '@' + telegram_id
+=======
+        telegram_id = request.form.get('telegram_id')
+>>>>>>> 5f8a7730096432ab1a144800397b81ce1675c230
 
         if not full_name or not email:
             flash('Имя и email обязательны', 'danger')
@@ -1263,6 +1351,7 @@ def admin_edit_user(user_id):
             flash('Пользователь с таким email уже существует', 'danger')
             return redirect(url_for('admin_edit_user', user_id=user.id))
 
+<<<<<<< HEAD
         # Проверка уникальности Telegram ID
         if telegram_id:
             existing_tg = User.query.filter(User.telegram_id == telegram_id, User.id != user.id).first()
@@ -1270,12 +1359,18 @@ def admin_edit_user(user_id):
                 flash('Пользователь с таким Telegram ID уже существует', 'danger')
                 return redirect(url_for('admin_edit_user', user_id=user.id))
 
+=======
+>>>>>>> 5f8a7730096432ab1a144800397b81ce1675c230
         user.full_name = full_name
         user.email = email
         if password:
             user.password_hash = generate_password_hash(password)
         user.role = role
+<<<<<<< HEAD
         user.telegram_id = telegram_id or None
+=======
+        user.telegram_id = telegram_id
+>>>>>>> 5f8a7730096432ab1a144800397b81ce1675c230
 
         db.session.commit()
         flash('Данные пользователя обновлены', 'success')

@@ -13,9 +13,15 @@
         <a href="{{ url_for('employee_attendance_add') }}" class="btn btn-success">
             <i class="bi bi-check2-circle"></i>Отметить факт
         </a>
+<<<<<<< HEAD
         <a href="{{ url_for('employee_absence_add', year=year, month=month) }}" class="btn btn-warning">
     <i class="bi bi-airplane"></i>Отпуск/больничный
 </a>
+=======
+        <a href="{{ url_for('employee_absence_add') }}" class="btn btn-warning">
+            <i class="bi bi-airplane"></i>Отпуск/больничный
+        </a>
+>>>>>>> 5f8a7730096432ab1a144800397b81ce1675c230
         <div class="btn-group ms-2">
             <a href="{{ url_for('employee_dashboard', year=prev_year, month=prev_month) }}" class="btn btn-outline-secondary">
                 <i class="bi bi-chevron-left"></i>
@@ -60,8 +66,12 @@
                             {% if absence %}
                                 <div class="mt-1">
                                     <span class="badge bg-secondary badge-status">
+<<<<<<< HEAD
                                         <i class="bi bi-airplane me-1"></i>
                                         {% if absence.type == 'other' and absence.custom_type %}{{ absence.custom_type }}{% else %}{{ absence.type|status_ru }}{% endif %}
+=======
+                                        <i class="bi bi-airplane me-1"></i>{{ absence.type|status_ru }}
+>>>>>>> 5f8a7730096432ab1a144800397b81ce1675c230
                                     </span>
                                 </div>
                             {% endif %}

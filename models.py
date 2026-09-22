@@ -54,8 +54,12 @@ class Absence(db.Model):
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
     date_start = db.Column(db.Date, nullable=False)
     date_end = db.Column(db.Date, nullable=False)
+<<<<<<< HEAD
     type = db.Column(db.String(20))
     custom_type = db.Column(db.String(200))  # для «другое»
+=======
+    type = db.Column(db.String(20))  # vacation, sick, other
+>>>>>>> 5f8a7730096432ab1a144800397b81ce1675c230
     status = db.Column(db.String(20), default='pending')
     file_path = db.Column(db.String(200))
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
