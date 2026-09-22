@@ -1,6 +1,6 @@
 from flask import render_template, redirect, url_for, request, flash, send_file, abort
 from flask_login import login_user, logout_user, login_required, current_user
-from models import User, Schedule, Attendance, Absence, ChangeLog
+from models import User, Schedule, Attendance, Absence, ChangeLog, Notification
 from werkzeug.security import check_password_hash, generate_password_hash
 from app import app, db
 from utils import (
@@ -16,6 +16,7 @@ import os
 DAYS_RU = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс']
 MONTHS_RU = ['Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь',
              'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь']
+
 
 @app.template_filter('status_ru')
 def status_ru_filter(value):
@@ -34,12 +35,26 @@ def status_ru_filter(value):
     }
     return mapping.get(value, value)
 
+
 @app.template_filter('month_ru')
 def month_ru_filter(month_num):
     try:
         return MONTHS_RU[int(month_num) - 1]
     except:
         return month_num
+
+
+def notify_user(user_id, message):
+    """Создаёт уведомление для сотрудника, если у него привязан telegram_chat_id."""
+    user = User.query.get(user_id)
+    if user and user.telegram_chat_id:
+        notif = Notification(
+            user_id=user.id,
+            chat_id=user.telegram_chat_id,
+            message=message
+        )
+        db.session.add(notif)
+
 
 # ---------- ОБЩИЕ ----------
 @app.route('/')
@@ -49,6 +64,7 @@ def index():
         return redirect(url_for('admin_dashboard'))
     else:
         return redirect(url_for('employee_dashboard'))
+
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
@@ -66,12 +82,14 @@ def login():
             flash('Неверный email или пароль', 'danger')
     return render_template('login.html')
 
+
 @app.route('/logout')
 @login_required
 def logout():
     logout_user()
     flash('Вы вышли из системы', 'info')
     return redirect(url_for('login'))
+
 
 # ---------- СОТРУДНИК ----------
 
@@ -145,6 +163,7 @@ def employee_dashboard():
         date=date
     )
 
+
 @app.route('/employee/history')
 @login_required
 def employee_history():
@@ -193,6 +212,7 @@ def employee_history():
         date=date
     )
 
+
 @app.route('/employee/who_works')
 @login_required
 def employee_who_works():
@@ -237,6 +257,7 @@ def employee_who_works():
         today=today,
         working_employees=working_employees.values()
     )
+
 
 @app.route('/employee/weekly_schedule')
 @login_required
@@ -304,6 +325,7 @@ def employee_weekly_schedule():
         num_days=num_days
     )
 
+
 @app.route('/employee/month_summary')
 @login_required
 def employee_month_summary():
@@ -356,6 +378,7 @@ def employee_month_summary():
         month=month,
         month_name=MONTHS_RU[month - 1]
     )
+
 
 @app.route('/employee/schedule/add', methods=['GET', 'POST'])
 @login_required
@@ -430,6 +453,7 @@ def employee_schedule_add():
 
     return render_template('employee/schedule_add.html', default_date=default_date, form_data=form_data)
 
+
 @app.route('/employee/schedule/<int:schedule_id>/edit', methods=['GET', 'POST'])
 @login_required
 def employee_schedule_edit(schedule_id):
@@ -487,6 +511,7 @@ def employee_schedule_edit(schedule_id):
 
     return render_template('employee/schedule_edit.html', schedule=schedule)
 
+
 @app.route('/employee/schedule/<int:schedule_id>/delete', methods=['POST'])
 @login_required
 def employee_schedule_delete(schedule_id):
@@ -502,6 +527,7 @@ def employee_schedule_delete(schedule_id):
     db.session.commit()
     flash('План удалён', 'success')
     return redirect(url_for('employee_dashboard'))
+
 
 @app.route('/employee/attendance/add', methods=['GET', 'POST'])
 @login_required
@@ -596,6 +622,7 @@ def employee_attendance_add():
 
     return render_template('employee/attendance_add.html', today=today.isoformat(), default_date=default_date, form_data=form_data)
 
+
 @app.route('/employee/attendance/<int:attendance_id>/edit', methods=['GET', 'POST'])
 @login_required
 def employee_attendance_edit(attendance_id):
@@ -671,6 +698,7 @@ def employee_attendance_edit(attendance_id):
         attendance=attendance,
         today=date.today().isoformat()
     )
+
 
 @app.route('/employee/absence/add', methods=['GET', 'POST'])
 @login_required
@@ -758,6 +786,18 @@ def employee_absence_add():
             db.session.add(absence)
             db.session.commit()
 
+            # Уведомление админам
+            admins = User.query.filter_by(role='admin').all()
+            for admin in admins:
+                if admin.telegram_chat_id:
+                    notif = Notification(
+                        user_id=admin.id,
+                        chat_id=admin.telegram_chat_id,
+                        message=f"📩 {current_user.full_name} подал заявку на {absence_type} с {date_start.strftime('%d.%m.%Y')} по {date_end.strftime('%d.%m.%Y')}"
+                    )
+                    db.session.add(notif)
+            db.session.commit()
+
             change = ChangeLog(
                 user_id=current_user.id,
                 target_user_id=current_user.id,
@@ -790,6 +830,7 @@ def employee_absence_add():
                            month_days=month_days, month_name=MONTHS_RU[month-1],
                            prev_year=prev_year, prev_month=prev_month,
                            next_year=next_year, next_month=next_month)
+
 
 @app.route('/employee/absence/<int:absence_id>/edit', methods=['GET', 'POST'])
 @login_required
@@ -890,6 +931,7 @@ def employee_absence_edit(absence_id):
         selected_end=absence.date_end.isoformat() if absence.date_end else ''
     )
 
+
 @app.route('/employee/absence/<int:absence_id>/request_delete', methods=['POST'])
 @login_required
 def employee_absence_request_delete(absence_id):
@@ -906,6 +948,7 @@ def employee_absence_request_delete(absence_id):
         db.session.commit()
         flash('Запрос на удаление отправлен администратору', 'warning')
     return redirect(url_for('employee_history'))
+
 
 @app.route('/employee/day_edit', methods=['GET', 'POST'])
 @login_required
@@ -1080,6 +1123,7 @@ def employee_day_edit():
         error_message=None
     )
 
+
 @app.route('/employee/day_clear/<string:date_str>', methods=['POST'])
 @login_required
 def employee_day_clear(date_str):
@@ -1099,6 +1143,7 @@ def employee_day_clear(date_str):
 
     flash(f'Данные за {d.strftime("%d.%m.%Y")} удалены', 'success')
     return redirect(url_for('employee_dashboard', year=d.year, month=d.month))
+
 
 @app.route('/employee/clear_history', methods=['POST'])
 @login_required
@@ -1128,6 +1173,7 @@ def employee_clear_history():
     flash('История очищена (данные текущей недели сохранены)', 'success')
     return redirect(url_for('employee_history'))
 
+
 # ---------- АДМИНИСТРАТОР ----------
 
 @app.route('/admin/dashboard')
@@ -1155,6 +1201,7 @@ def admin_dashboard():
         today_plans=today_plans,
         today_attendance=today_attendance
     )
+
 
 @app.route('/admin/pending_requests')
 @login_required
@@ -1255,6 +1302,7 @@ def admin_pending_requests():
         show_all=show_all
     )
 
+
 @app.route('/admin/approve_schedule/<int:schedule_id>')
 @login_required
 def admin_approve_schedule(schedule_id):
@@ -1263,12 +1311,21 @@ def admin_approve_schedule(schedule_id):
         return redirect(url_for('index'))
     schedule = Schedule.query.get_or_404(schedule_id)
     schedule.status = 'approved'
-    db.session.commit()
-    change = ChangeLog(user_id=current_user.id, target_user_id=schedule.user_id, field_changed='schedule_approve', old_value='pending', new_value='approved')
+
+    change = ChangeLog(user_id=current_user.id, target_user_id=schedule.user_id,
+                       field_changed='schedule_approve', old_value='pending', new_value='approved')
     db.session.add(change)
+
+    notify_user(schedule.user_id,
+                f"✅ Ваш план на {schedule.date.strftime('%d.%m.%Y')} подтверждён администратором.")
     db.session.commit()
+
     flash('План подтверждён', 'success')
-    return redirect(url_for('admin_pending_requests', cal_year=request.args.get('cal_year'), cal_month=request.args.get('cal_month'), show_all=request.args.get('show_all', '0')))
+    return redirect(url_for('admin_pending_requests',
+                            cal_year=request.args.get('cal_year'),
+                            cal_month=request.args.get('cal_month'),
+                            show_all=request.args.get('show_all', '0')))
+
 
 @app.route('/admin/reject_schedule/<int:schedule_id>')
 @login_required
@@ -1278,12 +1335,21 @@ def admin_reject_schedule(schedule_id):
         return redirect(url_for('index'))
     schedule = Schedule.query.get_or_404(schedule_id)
     schedule.status = 'rejected'
-    db.session.commit()
-    change = ChangeLog(user_id=current_user.id, target_user_id=schedule.user_id, field_changed='schedule_reject', old_value='pending', new_value='rejected')
+
+    change = ChangeLog(user_id=current_user.id, target_user_id=schedule.user_id,
+                       field_changed='schedule_reject', old_value='pending', new_value='rejected')
     db.session.add(change)
+
+    notify_user(schedule.user_id,
+                f"❌ Ваш план на {schedule.date.strftime('%d.%m.%Y')} отклонён администратором.")
     db.session.commit()
+
     flash('План отклонён', 'warning')
-    return redirect(url_for('admin_pending_requests', cal_year=request.args.get('cal_year'), cal_month=request.args.get('cal_month'), show_all=request.args.get('show_all', '0')))
+    return redirect(url_for('admin_pending_requests',
+                            cal_year=request.args.get('cal_year'),
+                            cal_month=request.args.get('cal_month'),
+                            show_all=request.args.get('show_all', '0')))
+
 
 @app.route('/admin/approve_absence/<int:absence_id>')
 @login_required
@@ -1293,12 +1359,21 @@ def admin_approve_absence(absence_id):
         return redirect(url_for('index'))
     absence = Absence.query.get_or_404(absence_id)
     absence.status = 'approved'
-    db.session.commit()
-    change = ChangeLog(user_id=current_user.id, target_user_id=absence.user_id, field_changed='absence_approve', old_value='pending', new_value='approved')
+
+    change = ChangeLog(user_id=current_user.id, target_user_id=absence.user_id,
+                       field_changed='absence_approve', old_value='pending', new_value='approved')
     db.session.add(change)
+
+    notify_user(absence.user_id,
+                f"✅ Ваша заявка на {absence.type} с {absence.date_start.strftime('%d.%m.%Y')} по {absence.date_end.strftime('%d.%m.%Y')} подтверждена.")
     db.session.commit()
+
     flash('Отпуск/больничный подтверждён', 'success')
-    return redirect(url_for('admin_pending_requests', cal_year=request.args.get('cal_year'), cal_month=request.args.get('cal_month'), show_all=request.args.get('show_all', '0')))
+    return redirect(url_for('admin_pending_requests',
+                            cal_year=request.args.get('cal_year'),
+                            cal_month=request.args.get('cal_month'),
+                            show_all=request.args.get('show_all', '0')))
+
 
 @app.route('/admin/reject_absence/<int:absence_id>')
 @login_required
@@ -1308,12 +1383,21 @@ def admin_reject_absence(absence_id):
         return redirect(url_for('index'))
     absence = Absence.query.get_or_404(absence_id)
     absence.status = 'rejected'
-    db.session.commit()
-    change = ChangeLog(user_id=current_user.id, target_user_id=absence.user_id, field_changed='absence_reject', old_value='pending', new_value='rejected')
+
+    change = ChangeLog(user_id=current_user.id, target_user_id=absence.user_id,
+                       field_changed='absence_reject', old_value='pending', new_value='rejected')
     db.session.add(change)
+
+    notify_user(absence.user_id,
+                f"❌ Ваша заявка на {absence.type} с {absence.date_start.strftime('%d.%m.%Y')} по {absence.date_end.strftime('%d.%m.%Y')} отклонена.")
     db.session.commit()
+
     flash('Отпуск/больничный отклонён', 'warning')
-    return redirect(url_for('admin_pending_requests', cal_year=request.args.get('cal_year'), cal_month=request.args.get('cal_month'), show_all=request.args.get('show_all', '0')))
+    return redirect(url_for('admin_pending_requests',
+                            cal_year=request.args.get('cal_year'),
+                            cal_month=request.args.get('cal_month'),
+                            show_all=request.args.get('show_all', '0')))
+
 
 @app.route('/admin/approve_attendance/<int:attendance_id>')
 @login_required
@@ -1323,12 +1407,21 @@ def admin_approve_attendance(attendance_id):
         return redirect(url_for('index'))
     attendance = Attendance.query.get_or_404(attendance_id)
     attendance.status = 'confirmed'
-    db.session.commit()
-    change = ChangeLog(user_id=current_user.id, target_user_id=attendance.user_id, field_changed='attendance_approve', old_value='pending', new_value='confirmed')
+
+    change = ChangeLog(user_id=current_user.id, target_user_id=attendance.user_id,
+                       field_changed='attendance_approve', old_value='pending', new_value='confirmed')
     db.session.add(change)
+
+    notify_user(attendance.user_id,
+                f"✅ Ваша отметка за {attendance.date.strftime('%d.%m.%Y')} подтверждена.")
     db.session.commit()
+
     flash('Фактическое время подтверждено', 'success')
-    return redirect(url_for('admin_pending_requests', cal_year=request.args.get('cal_year'), cal_month=request.args.get('cal_month'), show_all=request.args.get('show_all', '0')))
+    return redirect(url_for('admin_pending_requests',
+                            cal_year=request.args.get('cal_year'),
+                            cal_month=request.args.get('cal_month'),
+                            show_all=request.args.get('show_all', '0')))
+
 
 @app.route('/admin/reject_attendance/<int:attendance_id>')
 @login_required
@@ -1338,12 +1431,21 @@ def admin_reject_attendance(attendance_id):
         return redirect(url_for('index'))
     attendance = Attendance.query.get_or_404(attendance_id)
     attendance.status = 'rejected'
-    db.session.commit()
-    change = ChangeLog(user_id=current_user.id, target_user_id=attendance.user_id, field_changed='attendance_reject', old_value='pending', new_value='rejected')
+
+    change = ChangeLog(user_id=current_user.id, target_user_id=attendance.user_id,
+                       field_changed='attendance_reject', old_value='pending', new_value='rejected')
     db.session.add(change)
+
+    notify_user(attendance.user_id,
+                f"❌ Ваша отметка за {attendance.date.strftime('%d.%m.%Y')} отклонена. Внесите правки.")
     db.session.commit()
+
     flash('Фактическое время отклонено', 'warning')
-    return redirect(url_for('admin_pending_requests', cal_year=request.args.get('cal_year'), cal_month=request.args.get('cal_month'), show_all=request.args.get('show_all', '0')))
+    return redirect(url_for('admin_pending_requests',
+                            cal_year=request.args.get('cal_year'),
+                            cal_month=request.args.get('cal_month'),
+                            show_all=request.args.get('show_all', '0')))
+
 
 @app.route('/admin/approve_absence_deletion/<int:absence_id>')
 @login_required
@@ -1353,12 +1455,23 @@ def admin_approve_absence_deletion(absence_id):
         return redirect(url_for('index'))
     absence = Absence.query.get_or_404(absence_id)
     if absence.status == 'pending_deletion':
+        user_id = absence.user_id
+        date_start = absence.date_start
+        date_end = absence.date_end
         db.session.delete(absence)
+        db.session.commit()
+
+        notify_user(user_id,
+                    f"✅ Ваш запрос на удаление заявки ({date_start.strftime('%d.%m.%Y')} – {date_end.strftime('%d.%m.%Y')}) подтверждён.")
         db.session.commit()
         flash('Отпуск удалён', 'success')
     else:
         flash('Нет запроса на удаление', 'warning')
-    return redirect(url_for('admin_pending_requests', cal_year=request.args.get('cal_year'), cal_month=request.args.get('cal_month'), show_all=request.args.get('show_all', '0')))
+    return redirect(url_for('admin_pending_requests',
+                            cal_year=request.args.get('cal_year'),
+                            cal_month=request.args.get('cal_month'),
+                            show_all=request.args.get('show_all', '0')))
+
 
 @app.route('/admin/reject_absence_deletion/<int:absence_id>')
 @login_required
@@ -1369,11 +1482,18 @@ def admin_reject_absence_deletion(absence_id):
     absence = Absence.query.get_or_404(absence_id)
     if absence.status == 'pending_deletion':
         absence.status = 'approved' if absence.file_path else 'rejected'
+
+        notify_user(absence.user_id,
+                    f"❌ Ваш запрос на удаление заявки ({absence.date_start.strftime('%d.%m.%Y')} – {absence.date_end.strftime('%d.%m.%Y')}) отклонён.")
         db.session.commit()
         flash('Запрос на удаление отклонён', 'warning')
     else:
         flash('Нет запроса на удаление', 'warning')
-    return redirect(url_for('admin_pending_requests', cal_year=request.args.get('cal_year'), cal_month=request.args.get('cal_month'), show_all=request.args.get('show_all', '0')))
+    return redirect(url_for('admin_pending_requests',
+                            cal_year=request.args.get('cal_year'),
+                            cal_month=request.args.get('cal_month'),
+                            show_all=request.args.get('show_all', '0')))
+
 
 @app.route('/admin/history')
 @login_required
@@ -1393,6 +1513,7 @@ def admin_history():
         attendances=attendances
     )
 
+
 @app.route('/admin/clear_history', methods=['POST'])
 @login_required
 def admin_clear_history():
@@ -1408,6 +1529,7 @@ def admin_clear_history():
     flash('История заявок очищена', 'success')
     return redirect(url_for('admin_history'))
 
+
 @app.route('/admin/users')
 @login_required
 def admin_users():
@@ -1417,6 +1539,7 @@ def admin_users():
 
     users = User.query.all()
     return render_template('admin/users.html', users=users)
+
 
 @app.route('/admin/users/create', methods=['POST'])
 @login_required
@@ -1459,6 +1582,7 @@ def admin_create_user():
     flash('Пользователь создан', 'success')
     return redirect(url_for('admin_users'))
 
+
 @app.route('/admin/users/<int:user_id>/delete', methods=['POST'])
 @login_required
 def admin_delete_user(user_id):
@@ -1480,6 +1604,7 @@ def admin_delete_user(user_id):
     db.session.commit()
     flash(f'Пользователь {user.full_name} удалён', 'success')
     return redirect(url_for('admin_users'))
+
 
 @app.route('/admin/users/<int:user_id>/edit', methods=['GET', 'POST'])
 @login_required
@@ -1527,6 +1652,7 @@ def admin_edit_user(user_id):
         return redirect(url_for('admin_users'))
 
     return render_template('admin/edit_user.html', user=user)
+
 
 @app.route('/admin/month_summary', methods=['GET'])
 @login_required
@@ -1586,6 +1712,7 @@ def admin_month_summary():
         month=month,
         month_name=MONTHS_RU[month - 1]
     )
+
 
 @app.route('/admin/export')
 @login_required
@@ -1652,6 +1779,7 @@ def admin_export():
         download_name=f'summary_{year}_{month}.xlsx',
         mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
     )
+
 
 @app.route('/admin/weekly_schedule')
 @login_required

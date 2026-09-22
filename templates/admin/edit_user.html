@@ -31,9 +31,9 @@
                         </select>
                     </div>
                     <div class="mb-3">
-                        <label for="telegram_id" class="form-label"><i class="bi bi-telegram me-1"></i>Telegram ID</label>
+                        <label for="telegram_id" class="form-label"><i class="bi bi-telegram me-1"></i>Telegram Username</label>
                         <input type="text" class="form-control" id="telegram_id" name="telegram_id" value="{{ user.telegram_id or '' }}" placeholder="@username">
-                        <small class="text-muted">Знак @ добавляется автоматически, если не указан.</small>
+                        <small class="text-muted">Знак @ добавляется автоматически. Числовой ID сохранится автоматически, когда сотрудник привяжет аккаунт через /start.</small>
                     </div>
                     <div class="d-flex gap-2">
                         <button type="submit" class="btn btn-primary">

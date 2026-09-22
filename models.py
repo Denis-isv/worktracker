@@ -13,13 +13,16 @@ class User(UserMixin, db.Model):
     password_hash = db.Column(db.String(128))
     role = db.Column(db.String(20), default='employee')
     telegram_id = db.Column(db.String(50), unique=True)
+    telegram_chat_id = db.Column(db.String(50))
     work_rate = db.Column(db.Integer, default=80)
     status = db.Column(db.String(20), default='active')
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
     schedules = db.relationship('Schedule', backref='user', lazy=True)
     attendances = db.relationship('Attendance', backref='user', lazy=True)
     absences = db.relationship('Absence', backref='user', lazy=True)
-    changes = db.relationship('ChangeLog', backref='user', lazy=True)
+    changes = db.relationship('ChangeLog', backref='user', lazy=True,
+                              foreign_keys='ChangeLog.user_id')
 
 
 class Schedule(db.Model):
