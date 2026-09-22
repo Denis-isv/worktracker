@@ -45,7 +45,7 @@ def month_ru_filter(month_num):
 
 
 def notify_user(user_id, message):
-    """Создаёт уведомление для сотрудника, если у него привязан telegram_chat_id."""
+    """Создаёт уведомление для сотрудника, если у него есть telegram_chat_id."""
     user = User.query.get(user_id)
     if user and user.telegram_chat_id:
         notif = Notification(
@@ -120,17 +120,22 @@ def employee_dashboard():
     schedules = Schedule.query.filter(
         Schedule.user_id == current_user.id,
         Schedule.date >= start_date,
-        Schedule.date <= end_date
+        Schedule.date <= end_date,
+        Schedule.status != 'rejected'
     ).all()
+
     attendances = Attendance.query.filter(
         Attendance.user_id == current_user.id,
         Attendance.date >= start_date,
-        Attendance.date <= end_date
+        Attendance.date <= end_date,
+        Attendance.status != 'rejected'
     ).all()
+
     absences = Absence.query.filter(
         Absence.user_id == current_user.id,
         Absence.date_start <= end_date,
-        Absence.date_end >= start_date
+        Absence.date_end >= start_date,
+        Absence.status != 'rejected'
     ).all()
 
     schedule_by_day = {s.date.day: s for s in schedules}
@@ -222,12 +227,15 @@ def employee_who_works():
 
     today = date.today()
     plans_today = Schedule.query.filter_by(date=today, status='approved').all()
-    attendances_today = Attendance.query.filter_by(date=today).all()
+    attendances_today = Attendance.query.filter(
+        Attendance.date == today,
+        Attendance.status != 'rejected'
+    ).all()
 
     working_employees = {}
     for sch in plans_today:
         emp = sch.user
-        if emp.status == 'active':
+        if emp and emp.status == 'active':
             working_employees[emp.id] = {
                 'name': emp.full_name,
                 'plan_start': sch.planned_start.strftime('%H:%M') if sch.planned_start else None,
@@ -238,6 +246,8 @@ def employee_who_works():
             }
     for att in attendances_today:
         emp = att.user
+        if not emp:
+            continue
         if emp.id in working_employees:
             working_employees[emp.id]['actual_start'] = att.actual_start.strftime('%H:%M') if att.actual_start else None
             working_employees[emp.id]['actual_end'] = att.actual_end.strftime('%H:%M') if att.actual_end else None
@@ -279,7 +289,13 @@ def employee_weekly_schedule():
         plans = {}
         for emp in employees:
             sch = Schedule.query.filter_by(user_id=emp.id, date=day).first()
-            att = Attendance.query.filter_by(user_id=emp.id, date=day).first()
+            att = Attendance.query.filter(
+                Attendance.user_id == emp.id,
+                Attendance.date == day,
+                Attendance.status != 'rejected'
+            ).first()
+            if sch and sch.status == 'rejected':
+                sch = None
             plans[emp.id] = {'schedule': sch, 'attendance': att}
         days.append({
             'date': day,
@@ -299,7 +315,13 @@ def employee_weekly_schedule():
         day_plans = []
         for emp in employees:
             sch = Schedule.query.filter_by(user_id=emp.id, date=d).first()
-            att = Attendance.query.filter_by(user_id=emp.id, date=d).first()
+            att = Attendance.query.filter(
+                Attendance.user_id == emp.id,
+                Attendance.date == d,
+                Attendance.status != 'rejected'
+            ).first()
+            if sch and sch.status == 'rejected':
+                sch = None
             day_plans.append({
                 'name': emp.full_name,
                 'schedule_start': sch.planned_start.strftime('%H:%M') if sch and sch.planned_start else None,
@@ -348,7 +370,8 @@ def employee_month_summary():
     attendances = Attendance.query.filter(
         Attendance.user_id == current_user.id,
         Attendance.date >= start_date,
-        Attendance.date <= end_date
+        Attendance.date <= end_date,
+        Attendance.status != 'rejected'
     ).all()
 
     for att in attendances:
@@ -786,7 +809,6 @@ def employee_absence_add():
             db.session.add(absence)
             db.session.commit()
 
-            # Уведомление админам
             admins = User.query.filter_by(role='admin').all()
             for admin in admins:
                 if admin.telegram_chat_id:
@@ -1190,7 +1212,10 @@ def admin_dashboard():
 
     today = date.today()
     today_plans = Schedule.query.filter_by(date=today, status='approved').all()
-    today_attendance = Attendance.query.filter_by(date=today).all()
+    today_attendance = Attendance.query.filter(
+        Attendance.date == today,
+        Attendance.status != 'rejected'
+    ).all()
 
     return render_template(
         'admin/admin_dashboard.html',
@@ -1801,7 +1826,13 @@ def admin_weekly_schedule():
         plans = {}
         for emp in employees:
             sch = Schedule.query.filter_by(user_id=emp.id, date=day).first()
-            att = Attendance.query.filter_by(user_id=emp.id, date=day).first()
+            att = Attendance.query.filter(
+                Attendance.user_id == emp.id,
+                Attendance.date == day,
+                Attendance.status != 'rejected'
+            ).first()
+            if sch and sch.status == 'rejected':
+                sch = None
             plans[emp.id] = {'schedule': sch, 'attendance': att}
         days.append({
             'date': day,
@@ -1821,7 +1852,13 @@ def admin_weekly_schedule():
         day_plans = []
         for emp in employees:
             sch = Schedule.query.filter_by(user_id=emp.id, date=d).first()
-            att = Attendance.query.filter_by(user_id=emp.id, date=d).first()
+            att = Attendance.query.filter(
+                Attendance.user_id == emp.id,
+                Attendance.date == d,
+                Attendance.status != 'rejected'
+            ).first()
+            if sch and sch.status == 'rejected':
+                sch = None
             day_plans.append({
                 'name': emp.full_name,
                 'schedule_start': sch.planned_start.strftime('%H:%M') if sch and sch.planned_start else None,
