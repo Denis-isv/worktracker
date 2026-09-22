@@ -687,7 +687,6 @@ def employee_absence_add():
 
     month_days = calendar.Calendar().monthdayscalendar(year, month)
 
-    # Навигация
     if month == 1:
         prev_year, prev_month = year - 1, 12
     else:
@@ -702,12 +701,16 @@ def employee_absence_add():
         date_start_str = request.form.get('date_start')
         date_end_str = request.form.get('date_end')
         absence_type = request.form.get('type')
+        custom_type = request.form.get('custom_type', '').strip()
         file = request.files.get('file')
+
         form_data = {
             'date_start_str': date_start_str,
             'date_end_str': date_end_str,
-            'absence_type': absence_type
+            'absence_type': absence_type,
+            'custom_type': custom_type
         }
+
         if not date_start_str or not date_end_str or not absence_type:
             flash('Заполните все поля', 'danger')
             return render_template('employee/absence_add.html',
@@ -715,6 +718,15 @@ def employee_absence_add():
                                    month_days=month_days, month_name=MONTHS_RU[month-1],
                                    prev_year=prev_year, prev_month=prev_month,
                                    next_year=next_year, next_month=next_month)
+
+        if absence_type == 'other' and not custom_type:
+            flash('Укажите, что именно (например, «отгул», «учёба»)', 'danger')
+            return render_template('employee/absence_add.html',
+                                   form_data=form_data, year=year, month=month,
+                                   month_days=month_days, month_name=MONTHS_RU[month-1],
+                                   prev_year=prev_year, prev_month=prev_month,
+                                   next_year=next_year, next_month=next_month)
+
         try:
             date_start = datetime.strptime(date_start_str, '%Y-%m-%d').date()
             date_end = datetime.strptime(date_end_str, '%Y-%m-%d').date()
@@ -739,38 +751,24 @@ def employee_absence_add():
                 date_start=date_start,
                 date_end=date_end,
                 type=absence_type,
+                custom_type=custom_type if absence_type == 'other' else None,
                 status='pending',
                 file_path=file_path
             )
             db.session.add(absence)
             db.session.commit()
 
-            change = ChangeLog(
-                user_id=current_user.id,
-                target_user_id=current_user.id,
-                field_changed='absence_add',
-                old_value='',
-                new_value=f'{date_start} - {date_end} ({absence_type})'
-            )
-            db.session.add(change)
-            db.session.commit()
-
-            flash('Заявка на отпуск/больничный отправлена', 'success')
+            flash('Заявка отправлена', 'success')
             return redirect(url_for('employee_dashboard'))
         except Exception as e:
             db.session.rollback()
             flash(f'Ошибка: {e}', 'danger')
-            return render_template('employee/absence_add.html',
-                                   form_data=form_data, year=year, month=month,
-                                   month_days=month_days, month_name=MONTHS_RU[month-1],
-                                   prev_year=prev_year, prev_month=prev_month,
-                                   next_year=next_year, next_month=next_month)
 
-    # GET — берём значения из URL, чтобы сохранить при навигации по месяцам
     form_data = {
         'date_start_str': request.args.get('date_start', ''),
         'date_end_str': request.args.get('date_end', ''),
-        'absence_type': request.args.get('type', '')
+        'absence_type': request.args.get('type', ''),
+        'custom_type': ''
     }
     return render_template('employee/absence_add.html',
                            form_data=form_data, year=year, month=month,
