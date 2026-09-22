@@ -1,0 +1,168 @@
+{% extends "base.html" %}
+{% block title %}Расписание на неделю{% endblock %}
+{% block content %}
+<div class="page-header">
+    <h1><i class="bi bi-calendar-week me-2" style="color: var(--wt-primary);"></i>Расписание на неделю</h1>
+    <div class="d-flex gap-2 align-items-center">
+        <a href="{{ url_for('admin_weekly_schedule', offset=week_offset-1) }}" class="btn btn-sm btn-outline-secondary">
+            <i class="bi bi-chevron-left"></i>
+        </a>
+        <span class="hint"><i class="bi bi-calendar-range"></i>{{ start_of_week.strftime('%d.%m') }} – {{ end_of_week.strftime('%d.%m.%Y') }}</span>
+        <a href="{{ url_for('admin_weekly_schedule', offset=week_offset+1) }}" class="btn btn-sm btn-outline-secondary">
+            <i class="bi bi-chevron-right"></i>
+        </a>
+    </div>
+</div>
+
+<div class="row g-3">
+    <div class="col-lg-8">
+        <div class="card h-100">
+            <div class="card-header py-2"><i class="bi bi-table me-2"></i>Сотрудники и время работы</div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0" style="font-size: 0.8rem;">
+                        <thead>
+                            <tr>
+                                <th style="min-width: 130px;">Сотрудник</th>
+                                {% for day in days %}
+                                    <th class="text-center p-2">
+                                        <div style="font-weight: 700; font-size: 0.8rem;">{{ day.day_name }}</div>
+                                        <div class="text-muted" style="font-size: 0.7rem;">{{ day.date.strftime('%d.%m') }}</div>
+                                    </th>
+                                {% endfor %}
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for emp in employees %}
+                            <tr>
+                                <td><strong>{{ emp.full_name }}</strong></td>
+                                {% for day in days %}
+                                    {% set data = day.plans.get(emp.id) %}
+                                    {% set sch = data.schedule if data else None %}
+                                    {% set att = data.attendance if data else None %}
+                                    <td class="text-center p-1">
+                                        {% if sch %}
+                                            {% if sch.is_day_off %}
+                                                <span class="badge bg-secondary" style="font-size: 0.65rem;">Вых</span>
+                                            {% else %}
+                                                <span class="badge bg-primary" style="font-size: 0.65rem;">{{ sch.planned_start.strftime('%H:%M') }}–{{ sch.planned_end.strftime('%H:%M') }}</span>
+                                                {% if att and att.actual_start and att.actual_end %}
+                                                    <div style="margin-top: 2px;"><span class="badge bg-success" style="font-size: 0.65rem;">{{ att.actual_start.strftime('%H:%M') }}–{{ att.actual_end.strftime('%H:%M') }}</span></div>
+                                                {% endif %}
+                                            {% endif %}
+                                        {% elif att %}
+                                            <span class="badge bg-success" style="font-size: 0.65rem;">{{ att.actual_start.strftime('%H:%M') }}–{{ att.actual_end.strftime('%H:%M') }}</span>
+                                        {% else %}
+                                            <span class="text-muted">—</span>
+                                        {% endif %}
+                                    </td>
+                                {% endfor %}
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-4">
+        <div class="card h-100">
+            <div class="card-header py-2 d-flex justify-content-between align-items-center">
+                <span><i class="bi bi-calendar-month me-2"></i>{{ month_name }} {{ year }}</span>
+            </div>
+            <div class="card-body p-2">
+                <table class="table table-bordered text-center mb-2" style="font-size: 0.75rem;">
+                    <thead>
+                        <tr class="table-light">
+                            <th class="p-1">Пн</th><th class="p-1">Вт</th><th class="p-1">Ср</th><th class="p-1">Чт</th><th class="p-1">Пт</th><th class="p-1">Сб</th><th class="p-1">Вс</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for week in month_days %}
+                        <tr>
+                            {% for day in week %}
+                                {% if day == 0 %}
+                                    <td class="bg-light" style="height: 28px;"></td>
+                                {% else %}
+                                    <td class="calendar-day-cell" data-day="{{ day }}" style="height: 28px; cursor: pointer; font-weight: 600; padding: 2px;">
+                                        {{ day }}
+                                    </td>
+                                {% endif %}
+                            {% endfor %}
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+
+                <button id="close-all-days" class="btn btn-outline-secondary btn-sm mb-2 w-100">
+                    <i class="bi bi-x-circle"></i>Скрыть детали
+                </button>
+
+                {% for day in range(1, num_days + 1) %}
+                    <div id="day-details-{{ day }}" class="card mt-2 day-detail-card" style="display: none;">
+                        <div class="card-header py-1 d-flex justify-content-between align-items-center">
+                            <span style="font-size: 0.85rem;"><i class="bi bi-calendar-event me-1"></i>{{ "%02d.%02d.%d"|format(day, month, year) }}</span>
+                            <button type="button" class="btn-close btn-close-sm close-day-detail" data-day="{{ day }}"></button>
+                        </div>
+                        <div class="card-body p-0">
+                            {% set day_plans = month_plans.get(day, []) %}
+                            {% set working = [] %}
+                            {% for p in day_plans %}
+                                {% if (p.schedule_start or p.attendance_start) and not p.schedule_is_day_off %}
+                                    {% set _ = working.append(p) %}
+                                {% endif %}
+                            {% endfor %}
+                            {% if working %}
+                                <ul class="list-group list-group-flush">
+                                    {% for p in working %}
+                                        <li class="list-group-item py-2" style="font-size: 0.8rem;">
+                                            <strong>{{ p.name }}</strong>
+                                            {% if p.schedule_start and p.schedule_end %}
+                                                <br><span class="badge bg-primary" style="font-size: 0.65rem;">План: {{ p.schedule_start }}–{{ p.schedule_end }}</span>
+                                            {% endif %}
+                                            {% if p.attendance_start and p.attendance_end %}
+                                                <br><span class="badge bg-success" style="font-size: 0.65rem;">Факт: {{ p.attendance_start }}–{{ p.attendance_end }}</span>
+                                            {% endif %}
+                                        </li>
+                                    {% endfor %}
+                                </ul>
+                            {% else %}
+                                <div class="text-center text-muted p-3" style="font-size: 0.8rem;">
+                                    <i class="bi bi-emoji-neutral"></i> Никто не работает
+                                </div>
+                            {% endif %}
+                        </div>
+                    </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        document.querySelectorAll('.calendar-day-cell').forEach(cell => {
+            cell.addEventListener('click', function() {
+                const day = this.dataset.day;
+                const details = document.getElementById('day-details-' + day);
+                if (details) {
+                    details.style.display = (details.style.display === 'none' || details.style.display === '') ? 'block' : 'none';
+                }
+            });
+        });
+        document.querySelectorAll('.close-day-detail').forEach(btn => {
+            btn.addEventListener('click', function() {
+                document.getElementById('day-details-' + this.dataset.day).style.display = 'none';
+            });
+        });
+        document.getElementById('close-all-days').addEventListener('click', function() {
+            document.querySelectorAll('.day-detail-card').forEach(c => c.style.display = 'none');
+        });
+    });
+</script>
+
+<style>
+    .calendar-day-cell:hover { background: #eef2ff; color: var(--wt-primary); }
+</style>
+{% endblock %}

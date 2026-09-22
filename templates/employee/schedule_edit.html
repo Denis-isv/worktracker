@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container mt-4">
+    <h2>Редактировать план</h2>
+    <form method="POST">
+        <div class="mb-3">
+            <label for="date" class="form-label">Дата</label>
+            <input type="date" class="form-control" id="date" name="date" value="{{ schedule.date.strftime('%Y-%m-%d') }}" required>
+        </div>
+        <div class="mb-3 form-check">
+            <input type="checkbox" class="form-check-input" id="is_day_off" name="is_day_off" {% if schedule.is_day_off %}checked{% endif %}>
+            <label class="form-check-label" for="is_day_off">Выходной день</label>
+        </div>
+        <div id="time_fields" {% if schedule.is_day_off %}style="display:none;"{% endif %}>
+            <div class="mb-3">
+                <label for="start" class="form-label">Начало</label>
+                <input type="time" class="form-control" id="start" name="start" value="{{ schedule.planned_start.strftime('%H:%M') if schedule.planned_start else '' }}">
+            </div>
+            <div class="mb-3">
+                <label for="end" class="form-label">Конец</label>
+                <input type="time" class="form-control" id="end" name="end" value="{{ schedule.planned_end.strftime('%H:%M') if schedule.planned_end else '' }}">
+            </div>
+        </div>
+        <button type="submit" class="btn btn-primary">Сохранить</button>
+        <a href="{{ url_for('employee_dashboard') }}" class="btn btn-secondary">Отмена</a>
+    </form>
+</div>
+<script>
+document.getElementById('is_day_off').addEventListener('change', function() {
+    var timeFields = document.getElementById('time_fields');
+    if (this.checked) {
+        timeFields.style.display = 'none';
+    } else {
+        timeFields.style.display = 'block';
+    }
+});
+</script>
+{% endblock %}

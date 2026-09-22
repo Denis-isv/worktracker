@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block title %}Панель администратора{% endblock %}
+{% block content %}
+<div class="page-header">
+    <h1><i class="bi bi-speedometer2 me-2" style="color: var(--wt-primary);"></i>Панель администратора</h1>
+</div>
+
+<div class="row g-3 mb-4">
+    <div class="col-md-4">
+        <a href="{{ url_for('admin_pending_requests') }}" class="text-decoration-none">
+            <div class="stat-card stat-warning">
+                <i class="bi bi-inbox stat-icon"></i>
+                <div class="stat-label">Ожидают подтверждения</div>
+                <div class="stat-value">{{ total_pending }}</div>
+                <div style="font-size: 0.85rem; opacity: 0.9; margin-top: 0.5rem;">Нажмите, чтобы перейти →</div>
+            </div>
+        </a>
+    </div>
+    <div class="col-md-4">
+        <div class="stat-card stat-primary">
+            <i class="bi bi-briefcase stat-icon"></i>
+            <div class="stat-label">Сегодня планов</div>
+            <div class="stat-value">{{ today_plans|length }}</div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="stat-card stat-success">
+            <i class="bi bi-check2-circle stat-icon"></i>
+            <div class="stat-label">Фактических отметок</div>
+            <div class="stat-value">{{ today_attendance|length }}</div>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header"><i class="bi bi-people me-2"></i>Кто сегодня работает (по плану)</div>
+    <div class="card-body p-0">
+        {% if today_plans %}
+        <ul class="list-group list-group-flush">
+            {% for plan in today_plans %}
+            <li class="list-group-item d-flex justify-content-between align-items-center">
+                <div>
+                    <i class="bi bi-person-circle me-2" style="color: var(--wt-primary);"></i>
+                    <strong>{{ plan.user.full_name }}</strong>
+                </div>
+                <div>
+                    {% if plan.is_day_off %}
+                        <span class="badge bg-secondary">Выходной</span>
+                    {% else %}
+                        <span class="badge bg-primary">{{ plan.planned_start.strftime('%H:%M') }} – {{ plan.planned_end.strftime('%H:%M') }}</span>
+                    {% endif %}
+                </div>
+            </li>
+            {% endfor %}
+        </ul>
+        {% else %}
+        <div class="empty-state">
+            <i class="bi bi-calendar-x"></i>
+            <p>Нет утверждённых планов на сегодня</p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

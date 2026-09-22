@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}Кто работает сегодня{% endblock %}
+{% block content %}
+<div class="page-header">
+    <h1><i class="bi bi-people me-2" style="color: var(--wt-primary);"></i>Кто работает сегодня</h1>
+    <span class="hint"><i class="bi bi-calendar-event"></i>{{ today.strftime('%d.%m.%Y') }}</span>
+</div>
+
+<div class="card">
+    <div class="card-body p-0">
+        {% if working_employees %}
+        <div class="table-responsive">
+            <table class="table table-hover mb-0">
+                <thead>
+                    <tr>
+                        <th>Сотрудник</th>
+                        <th>План</th>
+                        <th>Факт</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for emp in working_employees %}
+                    <tr>
+                        <td><i class="bi bi-person-circle me-2" style="color: var(--wt-primary);"></i><strong>{{ emp.name }}</strong></td>
+                        <td>
+                            {% if emp.is_day_off %}
+                                <span class="badge bg-secondary">Выходной</span>
+                            {% elif emp.plan_start and emp.plan_end %}
+                                <span class="badge bg-primary">{{ emp.plan_start }} – {{ emp.plan_end }}</span>
+                            {% else %}—{% endif %}
+                        </td>
+                        <td>
+                            {% if emp.actual_start and emp.actual_end %}
+                                <span class="badge bg-success">{{ emp.actual_start }} – {{ emp.actual_end }}</span>
+                            {% else %}
+                                <span class="text-muted">не отмечен</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="empty-state">
+            <i class="bi bi-emoji-smile"></i>
+            <p>Сегодня никто не работает</p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

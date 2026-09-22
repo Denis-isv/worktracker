@@ -1,0 +1,105 @@
+{% extends "base.html" %}
+{% block title %}Мой календарь{% endblock %}
+{% block content %}
+<div class="page-header">
+    <div>
+        <h1><i class="bi bi-calendar3 me-2" style="color: var(--wt-primary);"></i>{{ month_name }} {{ year }}</h1>
+        <p class="text-muted mb-0 mt-1">{{ user.full_name }}</p>
+    </div>
+    <div class="d-flex flex-wrap gap-2">
+        <a href="{{ url_for('employee_schedule_add') }}" class="btn btn-primary">
+            <i class="bi bi-plus-lg"></i>План
+        </a>
+        <a href="{{ url_for('employee_attendance_add') }}" class="btn btn-success">
+            <i class="bi bi-check2-circle"></i>Отметить факт
+        </a>
+        <a href="{{ url_for('employee_absence_add', year=year, month=month) }}" class="btn btn-warning">
+    <i class="bi bi-airplane"></i>Отпуск/больничный
+</a>
+        <div class="btn-group ms-2">
+            <a href="{{ url_for('employee_dashboard', year=prev_year, month=prev_month) }}" class="btn btn-outline-secondary">
+                <i class="bi bi-chevron-left"></i>
+            </a>
+            <a href="{{ url_for('employee_day_edit', date=date.today().isoformat()) }}" class="btn btn-outline-secondary">Сегодня</a>
+            <a href="{{ url_for('employee_dashboard', year=next_year, month=next_month) }}" class="btn btn-outline-secondary">
+                <i class="bi bi-chevron-right"></i>
+            </a>
+        </div>
+    </div>
+</div>
+
+<div class="hint mb-3">
+    <i class="bi bi-info-circle"></i>Нажмите на любой день, чтобы изменить план, отметить фактическое время или добавить отпуск
+</div>
+
+<div class="card p-3">
+    <table class="table table-bordered calendar-table mb-0">
+        <thead>
+            <tr class="text-center">
+                <th>Пн</th><th>Вт</th><th>Ср</th><th>Чт</th><th>Пт</th><th class="text-primary">Сб</th><th class="text-danger">Вс</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for week in month_days %}
+            <tr>
+                {% for day in week %}
+                    {% if day == 0 %}
+                        <td class="bg-light" style="height: 110px;"></td>
+                    {% else %}
+                        <td class="position-relative" style="height: 110px; padding: 8px;">
+                            <div class="d-flex justify-content-between align-items-start">
+                                <span class="calendar-day">{{ day }}</span>
+                                <a href="{{ url_for('employee_day_edit', date=date(year, month, day).isoformat()) }}" class="btn btn-sm btn-outline-primary" style="padding: 0.1rem 0.4rem; font-size: 0.75rem;" title="Редактировать день">
+                                    <i class="bi bi-pencil"></i>
+                                </a>
+                            </div>
+                            {% set schedule = schedule_by_day.get(day) %}
+                            {% set attendance = attendance_by_day.get(day) %}
+                            {% set absence = absence_by_day.get(day) %}
+
+                            {% if absence %}
+                                <div class="mt-1">
+                                    <span class="badge bg-secondary badge-status">
+                                        <i class="bi bi-airplane me-1"></i>{{ absence.type|status_ru }}
+                                    </span>
+                                </div>
+                            {% endif %}
+
+                            {% if schedule %}
+                                <div class="mt-1">
+                                    {% if schedule.is_day_off %}
+                                        <span class="badge bg-light text-dark badge-status">Выходной</span>
+                                    {% else %}
+                                        <span class="badge bg-success badge-status">
+                                            <i class="bi bi-briefcase me-1"></i>{{ schedule.planned_start.strftime('%H:%M') }}–{{ schedule.planned_end.strftime('%H:%M') }}
+                                        </span>
+                                    {% endif %}
+                                </div>
+                            {% endif %}
+
+                            {% if attendance %}
+                                <div class="mt-1">
+                                    <span class="badge 
+                                        {% if attendance.status == 'confirmed' %}bg-primary
+                                        {% elif attendance.status == 'pending' %}bg-warning text-dark
+                                        {% else %}bg-danger{% endif %} badge-status">
+                                        <i class="bi bi-clock me-1"></i>{{ attendance.actual_start.strftime('%H:%M') }}–{{ attendance.actual_end.strftime('%H:%M') }}
+                                    </span>
+                                    <div class="text-muted" style="font-size: 0.7rem;">e%: {{ (attendance.efficiency * 100)|int }}%</div>
+                                </div>
+                            {% endif %}
+                        </td>
+                    {% endif %}
+                {% endfor %}
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<style>
+    .calendar-table td { vertical-align: top; }
+    .calendar-table .calendar-day { font-weight: 700; font-size: 1rem; }
+    .calendar-table td:hover { background: #f8fafc; }
+</style>
+{% endblock %}

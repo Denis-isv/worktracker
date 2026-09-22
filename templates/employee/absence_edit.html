@@ -1,0 +1,157 @@
+{% extends "base.html" %}
+{% block title %}Редактирование заявки{% endblock %}
+{% block content %}
+<div class="page-header">
+    <h1><i class="bi bi-pencil-square me-2" style="color: var(--wt-primary);"></i>Редактирование заявки</h1>
+</div>
+
+<div class="hint mb-3">
+    <i class="bi bi-info-circle"></i>Нажмите на день в календаре — сначала начало, потом конец. Уже выбранные даты выделены.
+</div>
+
+<div class="row g-4">
+    <div class="col-lg-7">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <a href="{{ url_for('employee_absence_edit', absence_id=absence.id, year=prev_year, month=prev_month) }}" class="btn btn-sm btn-outline-secondary">
+                    <i class="bi bi-chevron-left"></i>
+                </a>
+                <span class="fw-bold">{{ month_name }} {{ year }}</span>
+                <a href="{{ url_for('employee_absence_edit', absence_id=absence.id, year=next_year, month=next_month) }}" class="btn btn-sm btn-outline-secondary">
+                    <i class="bi bi-chevron-right"></i>
+                </a>
+            </div>
+            <div class="card-body">
+                <table class="table table-bordered text-center mb-0" id="absence-calendar" style="font-size: 0.9rem;">
+                    <thead>
+                        <tr class="table-light">
+                            <th>Пн</th><th>Вт</th><th>Ср</th><th>Чт</th><th>Пт</th><th>Сб</th><th>Вс</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for week in month_days %}
+                        <tr>
+                            {% for day in week %}
+                                {% if day == 0 %}
+                                    <td class="bg-light" style="height: 45px;"></td>
+                                {% else %}
+                                    <td class="calendar-day" data-date="{{ "%04d-%02d-%02d"|format(year, month, day) }}" style="height: 45px; cursor: pointer; padding: 6px;">
+                                        {{ day }}
+                                    </td>
+                                {% endif %}
+                            {% endfor %}
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                <div id="selected-range" class="mt-3 text-muted"></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-5">
+        <div class="card">
+            <div class="card-header"><i class="bi bi-file-earmark-text me-2"></i>Детали заявки</div>
+            <div class="card-body">
+                <form method="POST" enctype="multipart/form-data">
+                    <input type="hidden" id="date_start" name="date_start" value="{{ selected_start }}">
+                    <input type="hidden" id="date_end" name="date_end" value="{{ selected_end }}">
+
+                    <div class="mb-3">
+                        <label class="form-label">Дата начала</label>
+                        <input type="text" class="form-control" id="date_start_display" value="{{ selected_start }}" readonly>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Дата окончания</label>
+                        <input type="text" class="form-control" id="date_end_display" value="{{ selected_end }}" readonly>
+                    </div>
+                    <div class="mb-3">
+                        <label for="type" class="form-label">Тип</label>
+                        <select class="form-select" id="type" name="type" required>
+                            <option value="vacation" {% if absence.type == 'vacation' %}selected{% endif %}>Отпуск</option>
+                            <option value="sick" {% if absence.type == 'sick' %}selected{% endif %}>Больничный</option>
+                            <option value="other" {% if absence.type == 'other' %}selected{% endif %}>Другое</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label for="file" class="form-label">Заменить файл (если нужно)</label>
+                        <input type="file" class="form-control" id="file" name="file">
+                        {% if absence.file_path %}
+                            <small class="text-muted">Текущий файл: <a href="{{ url_for('static', filename=absence.file_path) }}" target="_blank">открыть</a></small>
+                        {% endif %}
+                    </div>
+                    <div class="d-flex gap-2">
+                        <button type="submit" class="btn btn-primary flex-grow-1">
+                            <i class="bi bi-check-lg"></i>Сохранить изменения
+                        </button>
+                        <a href="{{ url_for('employee_history') }}" class="btn btn-outline-secondary">Отмена</a>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    let selectedStart = document.getElementById('date_start').value || null;
+    let selectedEnd = document.getElementById('date_end').value || null;
+    const startInput = document.getElementById('date_start');
+    const endInput = document.getElementById('date_end');
+    const startDisplay = document.getElementById('date_start_display');
+    const endDisplay = document.getElementById('date_end_display');
+    const infoDiv = document.getElementById('selected-range');
+
+    function updateCalendar() {
+        document.querySelectorAll('.calendar-day').forEach(cell => {
+            const date = cell.dataset.date;
+            cell.classList.remove('range-start', 'range-end', 'in-range');
+            if (selectedStart && selectedEnd) {
+                if (date >= selectedStart && date <= selectedEnd) cell.classList.add('in-range');
+                if (date === selectedStart) cell.classList.add('range-start');
+                if (date === selectedEnd) cell.classList.add('range-end');
+            } else if (selectedStart && date === selectedStart) {
+                cell.classList.add('range-start');
+            }
+        });
+        startDisplay.value = selectedStart || '';
+        endDisplay.value = selectedEnd || '';
+        startInput.value = selectedStart || '';
+        endInput.value = selectedEnd || '';
+        if (selectedStart && selectedEnd) {
+            const d1 = new Date(selectedStart), d2 = new Date(selectedEnd);
+            const days = Math.round((d2 - d1) / (1000*60*60*24)) + 1;
+            infoDiv.innerHTML = `<i class="bi bi-info-circle me-1"></i>Выбрано: ${selectedStart} – ${selectedEnd} (${days} дн.)`;
+        } else if (selectedStart) {
+            infoDiv.innerHTML = '<i class="bi bi-info-circle me-1"></i>Выберите конечную дату';
+        } else {
+            infoDiv.innerHTML = '';
+        }
+    }
+
+    document.querySelectorAll('.calendar-day').forEach(cell => {
+        cell.addEventListener('click', function() {
+            const date = this.dataset.date;
+            if (!selectedStart || (selectedStart && selectedEnd)) {
+                selectedStart = date;
+                selectedEnd = null;
+            } else {
+                if (date < selectedStart) {
+                    [selectedStart, selectedEnd] = [date, selectedStart];
+                } else {
+                    selectedEnd = date;
+                }
+            }
+            updateCalendar();
+        });
+    });
+
+    updateCalendar();
+</script>
+
+<style>
+    .calendar-day { border-radius: 6px; transition: background 0.1s; }
+    .calendar-day:hover { background: #eef2ff; }
+    .calendar-day.in-range { background: #dbeafe; }
+    .calendar-day.range-start, .calendar-day.range-end { background: var(--wt-primary); color: white; font-weight: 600; }
+</style>
+{% endblock %}

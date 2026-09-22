@@ -1,0 +1,513 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}WorkTracker{% endblock %}</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+    <style>
+        :root {
+            --wt-primary: #4f46e5;
+            --wt-primary-hover: #4338ca;
+            --wt-success: #10b981;
+            --wt-warning: #f59e0b;
+            --wt-danger: #ef4444;
+            --wt-bg: #f8fafc;
+            --wt-card-bg: #ffffff;
+            --wt-border: #e5e7eb;
+            --wt-text: #1f2937;
+            --wt-text-muted: #6b7280;
+        }
+
+        body {
+            background-color: var(--wt-bg);
+            color: var(--wt-text);
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            min-height: 100vh;
+        }
+
+        .navbar {
+            background: linear-gradient(135deg, var(--wt-primary) 0%, #6366f1 100%) !important;
+            box-shadow: 0 2px 8px rgba(79, 70, 229, 0.15);
+        }
+
+        .navbar-brand {
+            font-weight: 700;
+            font-size: 1.35rem;
+            letter-spacing: -0.5px;
+        }
+
+        .navbar-brand i {
+            margin-right: 8px;
+        }
+
+        .navbar .nav-link {
+            font-weight: 500;
+            padding: 0.5rem 1rem !important;
+            border-radius: 8px;
+            transition: background 0.15s;
+        }
+
+        .navbar .nav-link:hover,
+        .navbar .nav-link.active {
+            background: rgba(255, 255, 255, 0.15);
+        }
+
+        .navbar .nav-link i {
+            margin-right: 6px;
+        }
+
+        .user-badge {
+            background: rgba(255, 255, 255, 0.2);
+            padding: 0.35rem 0.9rem;
+            border-radius: 20px;
+            font-weight: 500;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .page-container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 1.5rem 1rem;
+        }
+
+        .page-header {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            justify-content: space-between;
+            gap: 1rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .page-header h1,
+        .page-header h2 {
+            font-weight: 700;
+            letter-spacing: -0.5px;
+            margin: 0;
+            color: var(--wt-text);
+        }
+
+        .page-header h1 { font-size: 1.75rem; }
+        .page-header h2 { font-size: 1.5rem; }
+
+        .card {
+            border: 1px solid var(--wt-border);
+            border-radius: 14px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+            background: var(--wt-card-bg);
+            transition: box-shadow 0.15s;
+        }
+
+        .card:hover {
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.06);
+        }
+
+        .card-header {
+            background: transparent;
+            border-bottom: 1px solid var(--wt-border);
+            font-weight: 600;
+            padding: 1rem 1.25rem;
+            border-radius: 14px 14px 0 0 !important;
+        }
+
+        .btn {
+            border-radius: 10px;
+            font-weight: 500;
+            padding: 0.5rem 1.1rem;
+            transition: all 0.15s;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .btn-sm {
+            padding: 0.35rem 0.75rem;
+            font-size: 0.85rem;
+        }
+
+        .btn-primary {
+            background-color: var(--wt-primary);
+            border-color: var(--wt-primary);
+        }
+
+        .btn-primary:hover {
+            background-color: var(--wt-primary-hover);
+            border-color: var(--wt-primary-hover);
+            transform: translateY(-1px);
+            box-shadow: 0 4px 10px rgba(79, 70, 229, 0.25);
+        }
+
+        .btn-success {
+            background-color: var(--wt-success);
+            border-color: var(--wt-success);
+        }
+
+        .btn-success:hover {
+            background-color: #059669;
+            border-color: #059669;
+            transform: translateY(-1px);
+        }
+
+        .btn-warning {
+            background-color: var(--wt-warning);
+            border-color: var(--wt-warning);
+            color: #fff;
+        }
+
+        .btn-warning:hover {
+            background-color: #d97706;
+            border-color: #d97706;
+            color: #fff;
+            transform: translateY(-1px);
+        }
+
+        .btn-danger {
+            background-color: var(--wt-danger);
+            border-color: var(--wt-danger);
+        }
+
+        .btn-danger:hover {
+            background-color: #dc2626;
+            border-color: #dc2626;
+            transform: translateY(-1px);
+        }
+
+        .table {
+            border-radius: 12px;
+            overflow: hidden;
+            background: white;
+        }
+
+        .table thead th {
+            background: #f1f5f9;
+            color: var(--wt-text);
+            font-weight: 600;
+            border-bottom: 2px solid var(--wt-border);
+            font-size: 0.9rem;
+            padding: 0.85rem;
+        }
+
+        .table tbody td {
+            padding: 0.85rem;
+            vertical-align: middle;
+            border-color: var(--wt-border);
+        }
+
+        .table-hover tbody tr:hover {
+            background-color: #f8fafc;
+        }
+
+        .alert {
+            border-radius: 12px;
+            border: none;
+            font-weight: 500;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+        }
+
+        .badge {
+            padding: 0.4rem 0.7rem;
+            border-radius: 8px;
+            font-weight: 500;
+            font-size: 0.75rem;
+        }
+
+        .form-control, .form-select {
+            border-radius: 10px;
+            border: 1px solid var(--wt-border);
+            padding: 0.55rem 0.9rem;
+            transition: border-color 0.15s, box-shadow 0.15s;
+        }
+        .form-select {
+            padding-right: 2.5rem !important;
+            background-position: right 0.75rem center;
+        }
+
+        .form-control:focus, .form-select:focus {
+            border-color: var(--wt-primary);
+            box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.15);
+        }
+
+        .form-label {
+            font-weight: 500;
+            color: var(--wt-text);
+            margin-bottom: 0.4rem;
+        }
+
+        .stat-card {
+            border-radius: 14px;
+            padding: 1.5rem;
+            color: white;
+            position: relative;
+            overflow: hidden;
+            transition: transform 0.15s;
+        }
+
+        .stat-card:hover {
+            transform: translateY(-2px);
+        }
+
+        .stat-card .stat-icon {
+            font-size: 2.5rem;
+            opacity: 0.3;
+            position: absolute;
+            right: 1rem;
+            top: 50%;
+            transform: translateY(-50%);
+        }
+
+        .stat-card .stat-value {
+            font-size: 2rem;
+            font-weight: 700;
+            line-height: 1.2;
+        }
+
+        .stat-card .stat-label {
+            font-size: 0.9rem;
+            opacity: 0.9;
+            margin-bottom: 0.25rem;
+        }
+
+        .stat-primary { background: linear-gradient(135deg, #4f46e5, #6366f1); }
+        .stat-warning { background: linear-gradient(135deg, #f59e0b, #fbbf24); }
+        .stat-success { background: linear-gradient(135deg, #10b981, #34d399); }
+        .stat-info { background: linear-gradient(135deg, #06b6d4, #22d3ee); }
+
+        .empty-state {
+            text-align: center;
+            padding: 3rem 1rem;
+            color: var(--wt-text-muted);
+        }
+
+        .empty-state i {
+            font-size: 3rem;
+            opacity: 0.4;
+            margin-bottom: 1rem;
+            display: block;
+        }
+
+        .empty-state p {
+            margin: 0;
+            font-size: 0.95rem;
+        }
+
+        .hint {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 0.85rem;
+            color: var(--wt-text-muted);
+            background: #f1f5f9;
+            padding: 0.4rem 0.8rem;
+            border-radius: 8px;
+        }
+
+        .hint i {
+            color: var(--wt-primary);
+        }
+
+        .back-btn {
+            background: white;
+            border: 1px solid var(--wt-border);
+            color: var(--wt-text);
+            padding: 0.45rem 1rem;
+            border-radius: 10px;
+            font-weight: 500;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            transition: all 0.15s;
+        }
+
+        .back-btn:hover {
+            background: #f1f5f9;
+            color: var(--wt-primary);
+        }
+
+        @media (max-width: 768px) {
+            .page-header { flex-direction: column; align-items: stretch; }
+            .page-header h1, .page-header h2 { font-size: 1.3rem; }
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark">
+        <div class="container-fluid">
+            <a class="navbar-brand" href="{{ url_for('index') }}">
+                <i class="bi bi-clock-history"></i>WorkTracker
+            </a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav me-auto">
+                    {% if current_user.is_authenticated %}
+                        {% if current_user.role == 'employee' %}
+                            <li class="nav-item">
+                                <a class="nav-link" href="{{ url_for('employee_dashboard') }}">
+                                    <i class="bi bi-calendar3"></i>Мой календарь
+                                </a>
+                            </li>
+                            <li class="nav-item">
+                                <a class="nav-link" href="{{ url_for('employee_history') }}">
+                                    <i class="bi bi-clock-history"></i>История
+                                </a>
+                            </li>
+                            <li class="nav-item">
+                                <a class="nav-link" href="{{ url_for('employee_who_works') }}">
+                                    <i class="bi bi-people"></i>Кто работает
+                                </a>
+                            </li>
+                            <li class="nav-item">
+                                <a class="nav-link" href="{{ url_for('employee_weekly_schedule') }}">
+                                    <i class="bi bi-calendar-week"></i>Расписание недели
+                                </a>
+                            </li>
+                            <li class="nav-item">
+                                <a class="nav-link" href="{{ url_for('employee_month_summary') }}">
+                                    <i class="bi bi-graph-up"></i>Итоги месяца
+                                </a>
+                            </li>
+                        {% elif current_user.role == 'admin' %}
+                            <li class="nav-item">
+                                <a class="nav-link" href="{{ url_for('admin_dashboard') }}">
+                                    <i class="bi bi-speedometer2"></i>Панель
+                                </a>
+                            </li>
+                            <li class="nav-item">
+                                <a class="nav-link" href="{{ url_for('admin_pending_requests') }}">
+                                    <i class="bi bi-inbox"></i>Заявки
+                                </a>
+                            </li>
+                            <li class="nav-item">
+                                <a class="nav-link" href="{{ url_for('admin_weekly_schedule') }}">
+                                    <i class="bi bi-calendar-week"></i>Расписание недели
+                                </a>
+                            </li>
+                            <li class="nav-item">
+                                <a class="nav-link" href="{{ url_for('admin_month_summary') }}">
+                                    <i class="bi bi-graph-up"></i>Итоги месяца
+                                </a>
+                            </li>
+                            <li class="nav-item">
+                                <a class="nav-link" href="{{ url_for('admin_users') }}">
+                                    <i class="bi bi-people"></i>Пользователи
+                                </a>
+                            </li>
+                            <li class="nav-item">
+                                <a class="nav-link" href="{{ url_for('admin_export') }}">
+                                    <i class="bi bi-download"></i>Экспорт
+                                </a>
+                            </li>
+                        {% endif %}
+                    {% endif %}
+                </ul>
+                <ul class="navbar-nav">
+                    {% if current_user.is_authenticated %}
+                        <li class="nav-item">
+                            <span class="nav-link user-badge">
+                                <i class="bi bi-person-circle"></i>{{ current_user.full_name }}
+                            </span>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="{{ url_for('logout') }}">
+                                <i class="bi bi-box-arrow-right"></i>Выйти
+                            </a>
+                        </li>
+                    {% endif %}
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <div class="page-container">
+        {% if request.endpoint != 'login' %}
+            <a href="javascript:history.back()" class="back-btn mb-3">
+                <i class="bi bi-arrow-left"></i>Назад
+            </a>
+        {% endif %}
+
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                    <div class="alert alert-{{ category }} alert-dismissible fade show d-flex align-items-center" role="alert">
+                        {% if category == 'success' %}<i class="bi bi-check-circle-fill me-2"></i>
+                        {% elif category == 'danger' %}<i class="bi bi-exclamation-circle-fill me-2"></i>
+                        {% elif category == 'warning' %}<i class="bi bi-exclamation-triangle-fill me-2"></i>
+                        {% else %}<i class="bi bi-info-circle-fill me-2"></i>{% endif %}
+                        <div>{{ message }}</div>
+                        <button type="button" class="btn-close ms-auto" data-bs-dismiss="alert"></button>
+                    </div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+
+        {% block content %}{% endblock %}
+    </div>
+    <button id="scroll-top-btn" title="Наверх" style="display: none;">
+    <i class="bi bi-arrow-up"></i>
+</button>
+
+<style>
+    #scroll-top-btn {
+        position: fixed;
+        bottom: 30px;
+        right: 30px;
+        width: 48px;
+        height: 48px;
+        border-radius: 50%;
+        background: linear-gradient(135deg, #4f46e5, #6366f1);
+        color: white;
+        border: none;
+        box-shadow: 0 4px 12px rgba(79, 70, 229, 0.4);
+        font-size: 1.2rem;
+        cursor: pointer;
+        z-index: 1000;
+        transition: transform 0.2s, opacity 0.3s;
+    }
+    #scroll-top-btn:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 6px 16px rgba(79, 70, 229, 0.5);
+    }
+</style>
+
+    <script>
+        // Кнопка "Наверх"
+        const scrollBtn = document.getElementById('scroll-top-btn');
+        window.addEventListener('scroll', function() {
+            if (window.scrollY > 300) {
+                scrollBtn.style.display = 'flex';
+                scrollBtn.style.alignItems = 'center';
+                scrollBtn.style.justifyContent = 'center';
+            } else {
+                scrollBtn.style.display = 'none';
+            }
+        });
+        scrollBtn.addEventListener('click', function() {
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        });
+
+        // Сохранение позиции скролла
+        document.addEventListener('DOMContentLoaded', function() {
+            const savedScroll = sessionStorage.getItem('scrollPosition');
+            if (savedScroll) {
+                window.scrollTo(0, parseInt(savedScroll));
+                sessionStorage.removeItem('scrollPosition');
+            }
+        });
+
+        // Запоминаем позицию при клике на ссылки approve/reject
+        document.querySelectorAll('a[href*="approve"], a[href*="reject"]').forEach(link => {
+            link.addEventListener('click', function() {
+                sessionStorage.setItem('scrollPosition', window.scrollY);
+            });
+        });
+    </script>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>

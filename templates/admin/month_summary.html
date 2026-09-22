@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block title %}Итоги месяца{% endblock %}
+{% block content %}
+<div class="page-header">
+    <h1><i class="bi bi-graph-up me-2" style="color: var(--wt-primary);"></i>Итоги за {{ month_name }} {{ year }}</h1>
+</div>
+
+<div class="card mb-4">
+    <div class="card-body">
+        <form method="GET" class="row g-3 align-items-end">
+            <div class="col-auto">
+                <label for="year" class="form-label">Год</label>
+                <input type="number" class="form-control" id="year" name="year" value="{{ year }}">
+            </div>
+            <div class="col-auto">
+                <label for="month" class="form-label">Месяц</label>
+                <select class="form-select" id="month" name="month">
+                    {% for m in range(1, 13) %}
+                    <option value="{{ m }}" {% if m == month %}selected{% endif %}>{{ m }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-auto">
+                <button type="submit" class="btn btn-primary">
+                    <i class="bi bi-search"></i>Показать
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover mb-0">
+                <thead>
+                    <tr>
+                        <th>Сотрудник</th>
+                        <th>Отработано часов</th>
+                        <th>Средний e%</th>
+                        <th>Опоздания (часов)</th>
+                        <th>Итого часов</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in summary %}
+                    <tr>
+                        <td><i class="bi bi-person-circle me-2" style="color: var(--wt-primary);"></i><strong>{{ row.user.full_name }}</strong></td>
+                        <td>{{ "%.2f"|format(row.worked_hours) }}</td>
+                        <td><span class="badge bg-info">{{ "%.1f"|format(row.avg_efficiency) }}%</span></td>
+                        <td><span class="badge bg-warning text-dark">{{ "%.2f"|format(row.late_hours) }}</span></td>
+                        <td><span class="badge bg-success">{{ "%.2f"|format(row.final_hours) }}</span></td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

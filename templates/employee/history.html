@@ -1,0 +1,142 @@
+{% extends "base.html" %}
+{% block title %}История{% endblock %}
+{% block content %}
+<div class="page-header">
+    <h1><i class="bi bi-clock-history me-2" style="color: var(--wt-primary);"></i>Моя история</h1>
+</div>
+
+<div class="d-flex gap-2 mb-3">
+    <a href="{{ url_for('employee_history', view='month', month=date.today().month) }}" 
+       class="btn {% if view == 'month' %}btn-primary{% else %}btn-outline-primary{% endif %}">
+        <i class="bi bi-calendar-month"></i>Текущий месяц
+    </a>
+    <a href="{{ url_for('employee_history', view='week') }}" 
+       class="btn {% if view == 'week' %}btn-primary{% else %}btn-outline-primary{% endif %}">
+        <i class="bi bi-calendar-week"></i>Текущая неделя
+    </a>
+</div>
+
+{% if view == 'month' %}
+<form method="GET" class="card p-3 mb-4">
+    <input type="hidden" name="view" value="month">
+    <div class="row g-3 align-items-end">
+        <div class="col-auto">
+            <label for="month" class="form-label">Месяц</label>
+            <select class="form-select" id="month" name="month">
+                {% for m in range(1, 13) %}
+                <option value="{{ m }}" {% if m == month %}selected{% endif %}>{{ m }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="col-auto">
+            <button type="submit" class="btn btn-primary">
+                <i class="bi bi-search"></i>Показать
+            </button>
+        </div>
+    </div>
+</form>
+{% endif %}
+
+<div class="card mb-4">
+    <div class="card-header"><i class="bi bi-briefcase me-2"></i>Планы</div>
+    <div class="card-body">
+        {% if schedules %}
+        <div class="table-responsive">
+            <table class="table table-hover mb-0">
+                <thead>
+                    <tr>
+                        <th>Дата</th>
+                        <th>План</th>
+                        <th>Выходной</th>
+                        <th>Статус</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for s in schedules %}
+                    <tr>
+                        <td>{{ s.date.strftime('%d.%m.%Y') }}</td>
+                        <td>{% if not s.is_day_off %}{{ s.planned_start.strftime('%H:%M') }}–{{ s.planned_end.strftime('%H:%M') }}{% else %}—{% endif %}</td>
+                        <td>{{ 'Да' if s.is_day_off else 'Нет' }}</td>
+                        <td><span class="badge bg-{{ 'success' if s.status=='approved' else 'warning' if s.status=='pending' else 'danger' }}">{{ s.status|status_ru }}</span></td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="empty-state">
+            <i class="bi bi-inbox"></i>
+            <p>Планов за этот период нет</p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<div class="card mb-4">
+    <div class="card-header"><i class="bi bi-clock me-2"></i>Фактические отметки</div>
+    <div class="card-body">
+        {% if attendances %}
+        <div class="table-responsive">
+            <table class="table table-hover mb-0">
+                <thead>
+                    <tr>
+                        <th>Дата</th>
+                        <th>Время</th>
+                        <th>e%</th>
+                        <th>Статус</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for a in attendances %}
+                    <tr>
+                        <td>{{ a.date.strftime('%d.%m.%Y') }}</td>
+                        <td>{{ a.actual_start.strftime('%H:%M') }}–{{ a.actual_end.strftime('%H:%M') }}</td>
+                        <td>{{ (a.efficiency * 100)|int }}%</td>
+                        <td><span class="badge bg-{{ 'success' if a.status=='confirmed' else 'warning' if a.status=='pending' else 'danger' }}">{{ a.status|status_ru }}</span></td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="empty-state">
+            <i class="bi bi-inbox"></i>
+            <p>Фактических отметок нет</p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header"><i class="bi bi-airplane me-2"></i>Отпуска/больничные</div>
+    <div class="card-body">
+        {% if absences %}
+        <div class="table-responsive">
+            <table class="table table-hover mb-0">
+                <thead>
+                    <tr>
+                        <th>Период</th>
+                        <th>Тип</th>
+                        <th>Статус</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for ab in absences %}
+                    <tr>
+                        <td>{{ ab.date_start.strftime('%d.%m.%Y') }} – {{ ab.date_end.strftime('%d.%m.%Y') }}</td>
+                        <td>{{ ab.type|status_ru }}</td>
+                        <td><span class="badge bg-{{ 'success' if ab.status=='approved' else 'warning' if ab.status=='pending' else 'danger' if ab.status=='rejected' else 'secondary' }}">{{ ab.status|status_ru }}</span></td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="empty-state">
+            <i class="bi bi-inbox"></i>
+            <p>Заявок нет</p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

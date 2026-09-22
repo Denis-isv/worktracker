@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block title %}Редактирование пользователя{% endblock %}
+{% block content %}
+<div class="page-header">
+    <h1><i class="bi bi-person-gear me-2" style="color: var(--wt-primary);"></i>Редактирование: {{ user.full_name }}</h1>
+</div>
+
+<div class="row justify-content-center">
+    <div class="col-md-8 col-lg-6">
+        <div class="card">
+            <div class="card-body">
+                <form method="POST">
+                    <div class="mb-3">
+                        <label for="full_name" class="form-label"><i class="bi bi-person me-1"></i>ФИО</label>
+                        <input type="text" class="form-control" id="full_name" name="full_name" value="{{ user.full_name }}" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="email" class="form-label"><i class="bi bi-envelope me-1"></i>Email</label>
+                        <input type="email" class="form-control" id="email" name="email" value="{{ user.email }}" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="password" class="form-label"><i class="bi bi-key me-1"></i>Новый пароль</label>
+                        <input type="password" class="form-control" id="password" name="password" placeholder="Оставьте пустым, чтобы не менять">
+                        <small class="text-muted">Текущий пароль нельзя увидеть, но можно установить новый.</small>
+                    </div>
+                    <div class="mb-3">
+                        <label for="role" class="form-label"><i class="bi bi-shield me-1"></i>Роль</label>
+                        <select class="form-select" id="role" name="role">
+                            <option value="employee" {% if user.role == 'employee' %}selected{% endif %}>Сотрудник</option>
+                            <option value="admin" {% if user.role == 'admin' %}selected{% endif %}>Администратор</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label for="telegram_id" class="form-label"><i class="bi bi-telegram me-1"></i>Telegram ID</label>
+                        <input type="text" class="form-control" id="telegram_id" name="telegram_id" value="{{ user.telegram_id or '' }}" placeholder="@username">
+                        <small class="text-muted">Знак @ добавляется автоматически, если не указан.</small>
+                    </div>
+                    <div class="d-flex gap-2">
+                        <button type="submit" class="btn btn-primary">
+                            <i class="bi bi-check-lg"></i>Сохранить
+                        </button>
+                        <a href="{{ url_for('admin_users') }}" class="btn btn-outline-secondary">Отмена</a>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

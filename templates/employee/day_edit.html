@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% block title %}Редактирование дня{% endblock %}
+{% block content %}
+<h2>Редактирование {{ current_date.strftime('%d.%m.%Y') }}</h2>
+
+{% if absence %}
+<div class="alert alert-info d-flex align-items-center">
+    <i class="bi bi-info-circle me-2"></i>
+    <div class="flex-grow-1">На эту дату утверждён отпуск/больничный ({{ absence.type|status_ru }}).</div>
+    <a href="{{ url_for('employee_absence_edit', absence_id=absence.id) }}" class="btn btn-sm btn-outline-primary">Изменить</a>
+</div>
+{% endif %}
+
+<form method="POST">
+    <div class="card mb-3">
+        <div class="card-header">План</div>
+        <div class="card-body">
+            <div class="form-check mb-2">
+                <input type="checkbox" class="form-check-input" id="is_day_off" name="is_day_off"
+                       {% if form_data.is_day_off %}checked{% endif %}>
+                <label class="form-check-label" for="is_day_off">Выходной</label>
+            </div>
+            <div class="row">
+                <div class="col">
+                    <label for="plan_start" class="form-label">Время прихода (план)</label>
+                    <input type="time" class="form-control" id="plan_start" name="plan_start"
+                           value="{{ form_data.plan_start_str }}">
+                </div>
+                <div class="col">
+                    <label for="plan_end" class="form-label">Время ухода (план)</label>
+                    <input type="time" class="form-control" id="plan_end" name="plan_end"
+                           value="{{ form_data.plan_end_str }}">
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {% if not is_future %}
+    <div class="card mb-3">
+        <div class="card-header">Фактическое время</div>
+        <div class="card-body">
+            <div class="row">
+                <div class="col">
+                    <label for="actual_start" class="form-label">Приход (факт)</label>
+                    <input type="time" class="form-control" id="actual_start" name="actual_start"
+                           value="{{ form_data.actual_start_str }}">
+                </div>
+                <div class="col">
+                    <label for="actual_end" class="form-label">Уход (факт)</label>
+                    <input type="time" class="form-control" id="actual_end" name="actual_end"
+                           value="{{ form_data.actual_end_str }}">
+                </div>
+            </div>
+            <div class="mt-2">
+                <label for="efficiency" class="form-label">Эффективность (%)</label>
+                <input type="number" class="form-control" id="efficiency" name="efficiency" min="0" max="100" step="1"
+                       value="{{ form_data.efficiency_str }}">
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    <button type="submit" class="btn btn-primary">Сохранить</button>
+    <a href="{{ url_for('employee_dashboard', year=current_date.year, month=current_date.month) }}" class="btn btn-secondary">Отмена</a>
+</form>
+
+<hr>
+<form action="{{ url_for('employee_day_clear', date_str=current_date.isoformat()) }}" method="post" class="mt-3">
+    <button type="submit" class="btn btn-danger" onclick="return confirm('Удалить все данные за этот день?')">Очистить день</button>
+</form>
+{% endblock %}
