@@ -60,7 +60,8 @@
                             {% if absence %}
                                 <div class="mt-1">
                                     <span class="badge bg-secondary badge-status">
-                                        <i class="bi bi-airplane me-1"></i>{{ absence.type|status_ru }}
+                                        <i class="bi bi-airplane me-1"></i>
+                                        {% if absence.type == 'other' and absence.custom_type %}{{ absence.custom_type }}{% else %}{{ absence.type|status_ru }}{% endif %}
                                     </span>
                                 </div>
                             {% endif %}

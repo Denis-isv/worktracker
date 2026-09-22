@@ -73,6 +73,11 @@
                             <option value="other" {% if absence.type == 'other' %}selected{% endif %}>Другое</option>
                         </select>
                     </div>
+                    <div class="mb-3" id="custom-type-block" style="display: none;">
+                        <label for="custom_type" class="form-label">Уточните, что именно</label>
+                        <input type="text" class="form-control" id="custom_type" name="custom_type"
+                            value="{{ absence.custom_type or '' }}">
+                    </div>
                     <div class="mb-3">
                         <label for="file" class="form-label">Заменить файл (если нужно)</label>
                         <input type="file" class="form-control" id="file" name="file">
@@ -146,6 +151,15 @@
     });
 
     updateCalendar();
+
+    const typeSelect = document.getElementById('type');
+    const customBlock = document.getElementById('custom-type-block');
+    function toggleCustom() {
+        customBlock.style.display = (typeSelect.value === 'other') ? 'block' : 'none';
+    }
+    typeSelect.addEventListener('change', toggleCustom);
+    toggleCustom();
+
 </script>
 
 <style>

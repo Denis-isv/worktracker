@@ -124,7 +124,13 @@
                     {% for ab in absences %}
                     <tr>
                         <td>{{ ab.date_start.strftime('%d.%m.%Y') }} – {{ ab.date_end.strftime('%d.%m.%Y') }}</td>
-                        <td>{{ ab.type|status_ru }}</td>
+                        <td>
+                            {% if ab.type == 'other' and ab.custom_type %}
+                                {{ ab.custom_type }}
+                            {% else %}
+                                {{ ab.type|status_ru }}
+                            {% endif %}
+                        </td>
                         <td><span class="badge bg-{{ 'success' if ab.status=='approved' else 'warning' if ab.status=='pending' else 'danger' if ab.status=='rejected' else 'secondary' }}">{{ ab.status|status_ru }}</span></td>
                     </tr>
                     {% endfor %}
