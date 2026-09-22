@@ -71,7 +71,6 @@
                             <option value="other" {% if form_data.absence_type == 'other' %}selected{% endif %}>Другое</option>
                         </select>
                     </div>
-<<<<<<< HEAD
 
                     <div class="mb-3" id="custom-type-block" style="display: none;">
                         <label for="custom_type" class="form-label">Уточните, что именно</label>
@@ -82,10 +81,6 @@
 
                     <div class="mb-3">
                         <label for="file" class="form-label">Файл (справка, если есть)</label>
-=======
-                    <div class="mb-3">
-                        <label for="file" class="form-label">Файл (справка)</label>
->>>>>>> 5f8a7730096432ab1a144800397b81ce1675c230
                         <input type="file" class="form-control" id="file" name="file">
                     </div>
                     <button type="submit" class="btn btn-warning w-100">
@@ -150,8 +145,6 @@
         });
     });
 
-<<<<<<< HEAD
-    // Показ/скрытие поля "Уточните, что именно"
     const typeSelect = document.getElementById('type');
     const customBlock = document.getElementById('custom-type-block');
     function toggleCustom() {
@@ -160,8 +153,6 @@
     typeSelect.addEventListener('change', toggleCustom);
     toggleCustom();
 
-=======
->>>>>>> 5f8a7730096432ab1a144800397b81ce1675c230
     updateCalendar();
 </script>
 
