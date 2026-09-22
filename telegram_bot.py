@@ -355,7 +355,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     return ASK_EMAIL
 
-
 async def receive_email(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip()
     if text == CANCEL_TEXT:
@@ -376,9 +375,18 @@ async def receive_email(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             return ASK_EMAIL
 
+        # Сохраняем числовой chat_id
         user.telegram_chat_id = str(chat_id)
+
+        # Сохраняем username, если есть; иначе — имя или id
         if tg_user.username:
             user.telegram_id = f"@{tg_user.username}"
+        elif not user.telegram_id:
+            if tg_user.first_name:
+                user.telegram_id = tg_user.first_name
+            else:
+                user.telegram_id = f"id{chat_id}"
+
         db.session.commit()
 
         await update.message.reply_text(
@@ -388,7 +396,6 @@ async def receive_email(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=main_menu_keyboard()
         )
     return ConversationHandler.END
-
 
 async def detach_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
@@ -1135,6 +1142,58 @@ async def check_notifications(context: ContextTypes.DEFAULT_TYPE):
         db.session.commit()
 
 
+async def end_conversation(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Завершает диалог при нажатии «❌ Отмена»."""
+    await update.message.reply_text(
+        "Отменено. Ты в главном меню 👇",
+        reply_markup=main_menu_keyboard()
+    )
+    return ConversationHandler.END
+
+
+async def text_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Надёжный роутер по тексту кнопок через подстроку — не зависит от эмодзи."""
+    text = update.message.text or ''
+
+    # Регистрация: если не привязан, ждём email
+    chat_id = update.effective_chat.id
+    with app.app_context():
+        user = get_user_by_chat(chat_id)
+    if not user:
+        await update.message.reply_text(
+            "Сначала отправь /start и привяжи аккаунт.",
+            reply_markup=cancel_keyboard()
+        )
+        return
+
+    # Меню
+    if 'Мой профиль' in text:
+        await cmd_profile(update, context)
+    elif 'Расписание недели' in text:
+        await cmd_week(update, context)
+    elif 'Предложить план' in text:
+        await plan_start(update, context)
+        # Это запустит новую conversation при следующем сообщении
+    elif 'Отметить факт' in text:
+        await fact_start(update, context)
+    elif 'Заявка на отпуск' in text:
+        await abs_start(update, context)
+    elif 'Мои заявки' in text:
+        await cmd_my_absences(update, context)
+    elif 'Кто работает' in text:
+        await cmd_who(update, context)
+    elif 'Итоги месяца' in text:
+        await cmd_summary(update, context)
+    elif 'Помощь' in text:
+        await cmd_help(update, context)
+    elif 'Отвязать аккаунт' in text:
+        await detach_start(update, context)
+    else:
+        await update.message.reply_text(
+            "🤔 Не понимаю команду. Используй кнопки внизу 👇",
+            reply_markup=main_menu_keyboard()
+        )
+
 # ---------- ЗАПУСК ----------
 def main():
     if not Config.TELEGRAM_BOT_TOKEN:
@@ -1143,130 +1202,87 @@ def main():
 
     application = Application.builder().token(Config.TELEGRAM_BOT_TOKEN).build()
 
-    # Главное меню — простые обработчики (вне Conversation)
-    application.add_handler(CommandHandler('start', start))
-    application.add_handler(MessageHandler(filters.Regex('^👤 Мой профиль$'), cmd_profile))
-    application.add_handler(MessageHandler(filters.Regex('^📋 Расписание недели$'), cmd_week))
-    application.add_handler(MessageHandler(filters.Regex('^👥 Кто работает$'), cmd_who))
-    application.add_handler(MessageHandler(filters.Regex('^📂 Мои заявки$'), cmd_my_absences))
-    application.add_handler(MessageHandler(filters.Regex('^📊 Итоги месяца$'), cmd_summary))
-    application.add_handler(MessageHandler(filters.Regex('^❓ Помощь$'), cmd_help))
-    application.add_handler(MessageHandler(filters.Regex('^🔓 Отвязать аккаунт$'), detach_start))
-
-    # Регистрация
+    # ===== Регистрация =====
     reg_handler = ConversationHandler(
         entry_points=[CommandHandler('start', start)],
         states={
             ASK_EMAIL: [
-                MessageHandler(filters.Text(MENU_BUTTONS), universal_fallback),
                 MessageHandler(filters.TEXT & ~filters.COMMAND, receive_email),
             ],
         },
         fallbacks=[
-            MessageHandler(filters.TEXT & ~filters.COMMAND, universal_fallback),
+            CommandHandler('start', start),
         ],
     )
-    application.add_handler(reg_handler)
+    application.add_handler(reg_handler, group=-1)
 
-    # План
+    # ===== План =====
     plan_handler = ConversationHandler(
-        entry_points=[MessageHandler(filters.Regex('^✏️ Предложить план$'), plan_start)],
+        entry_points=[MessageHandler(filters.Regex('Предложить план'), plan_start)],
         states={
             PLAN_DATE: [
                 CallbackQueryHandler(plan_today_callback, pattern='^plan_'),
-                MessageHandler(filters.Text(MENU_BUTTONS + [CANCEL_TEXT]), universal_fallback),
                 MessageHandler(filters.TEXT & ~filters.COMMAND, plan_date),
             ],
-            PLAN_START: [
-                MessageHandler(filters.Text(MENU_BUTTONS + [CANCEL_TEXT]), universal_fallback),
-                MessageHandler(filters.TEXT & ~filters.COMMAND, plan_start_time),
-            ],
-            PLAN_END: [
-                MessageHandler(filters.Text(MENU_BUTTONS + [CANCEL_TEXT]), universal_fallback),
-                MessageHandler(filters.TEXT & ~filters.COMMAND, plan_end_time),
-            ],
+            PLAN_START: [MessageHandler(filters.TEXT & ~filters.COMMAND, plan_start_time)],
+            PLAN_END: [MessageHandler(filters.TEXT & ~filters.COMMAND, plan_end_time)],
         },
         fallbacks=[
-            MessageHandler(filters.TEXT & ~filters.COMMAND, universal_fallback),
+            CommandHandler('start', start),
+            MessageHandler(filters.Text([CANCEL_TEXT]), end_conversation),
         ],
     )
-    application.add_handler(plan_handler)
+    application.add_handler(plan_handler, group=-1)
 
-    # Факт
+    # ===== Факт =====
     fact_handler = ConversationHandler(
-        entry_points=[MessageHandler(filters.Regex('^⏰ Отметить факт$'), fact_start)],
+        entry_points=[MessageHandler(filters.Regex('Отметить факт'), fact_start)],
         states={
             FACT_DATE: [
                 CallbackQueryHandler(fact_date_callback, pattern='^fact_'),
-                MessageHandler(filters.Text(MENU_BUTTONS + [CANCEL_TEXT]), universal_fallback),
                 MessageHandler(filters.TEXT & ~filters.COMMAND, fact_date),
             ],
-            FACT_START: [
-                MessageHandler(filters.Text(MENU_BUTTONS + [CANCEL_TEXT]), universal_fallback),
-                MessageHandler(filters.TEXT & ~filters.COMMAND, fact_start_time),
-            ],
-            FACT_END: [
-                MessageHandler(filters.Text(MENU_BUTTONS + [CANCEL_TEXT]), universal_fallback),
-                MessageHandler(filters.TEXT & ~filters.COMMAND, fact_end_time),
-            ],
-            FACT_EFF: [
-                MessageHandler(filters.Text(MENU_BUTTONS + [CANCEL_TEXT]), universal_fallback),
-                MessageHandler(filters.TEXT & ~filters.COMMAND, fact_efficiency),
-            ],
+            FACT_START: [MessageHandler(filters.TEXT & ~filters.COMMAND, fact_start_time)],
+            FACT_END: [MessageHandler(filters.TEXT & ~filters.COMMAND, fact_end_time)],
+            FACT_EFF: [MessageHandler(filters.TEXT & ~filters.COMMAND, fact_efficiency)],
         },
         fallbacks=[
-            MessageHandler(filters.TEXT & ~filters.COMMAND, universal_fallback),
+            CommandHandler('start', start),
+            MessageHandler(filters.Text([CANCEL_TEXT]), end_conversation),
         ],
     )
-    application.add_handler(fact_handler)
+    application.add_handler(fact_handler, group=-1)
 
-    # Отпуск
+    # ===== Отпуск =====
     abs_handler = ConversationHandler(
-        entry_points=[MessageHandler(filters.Regex('^🏖 Заявка на отпуск$'), abs_start)],
+        entry_points=[MessageHandler(filters.Regex('Заявка на отпуск'), abs_start)],
         states={
-            ABS_TYPE: [
-                CallbackQueryHandler(abs_type_callback, pattern='^abs_'),
-                MessageHandler(filters.Text(MENU_BUTTONS + [CANCEL_TEXT]), universal_fallback),
-            ],
-            ABS_DATE_START: [
-                MessageHandler(filters.Text(MENU_BUTTONS + [CANCEL_TEXT]), universal_fallback),
-                MessageHandler(filters.TEXT & ~filters.COMMAND, abs_date_start),
-            ],
-            ABS_DATE_END: [
-                MessageHandler(filters.Text(MENU_BUTTONS + [CANCEL_TEXT]), universal_fallback),
-                MessageHandler(filters.TEXT & ~filters.COMMAND, abs_date_end),
-            ],
-            ABS_CUSTOM: [
-                MessageHandler(filters.Text(MENU_BUTTONS + [CANCEL_TEXT]), universal_fallback),
-                MessageHandler(filters.TEXT & ~filters.COMMAND, abs_custom),
-            ],
+            ABS_TYPE: [CallbackQueryHandler(abs_type_callback, pattern='^abs_')],
+            ABS_DATE_START: [MessageHandler(filters.TEXT & ~filters.COMMAND, abs_date_start)],
+            ABS_DATE_END: [MessageHandler(filters.TEXT & ~filters.COMMAND, abs_date_end)],
+            ABS_CUSTOM: [MessageHandler(filters.TEXT & ~filters.COMMAND, abs_custom)],
             ABS_FILE: [
-                MessageHandler(filters.Text(MENU_BUTTONS + [CANCEL_TEXT]), universal_fallback),
                 MessageHandler(filters.Document.ALL | filters.PHOTO, abs_receive_file),
                 MessageHandler(filters.TEXT & ~filters.COMMAND, abs_receive_file),
             ],
         },
         fallbacks=[
-            MessageHandler(filters.TEXT & ~filters.COMMAND, universal_fallback),
+            CommandHandler('start', start),
+            MessageHandler(filters.Text([CANCEL_TEXT]), end_conversation),
         ],
     )
-    application.add_handler(abs_handler)
+    application.add_handler(abs_handler, group=-1)
 
-    # Инлайн-кнопки
+    # ===== Роутер по тексту кнопок (вне диалогов) =====
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_router))
+
+    # ===== Инлайн-кнопки =====
     application.add_handler(CallbackQueryHandler(week_callback, pattern='^week_'))
     application.add_handler(CallbackQueryHandler(summary_callback, pattern='^sum_'))
     application.add_handler(CallbackQueryHandler(help_callback, pattern='^help_'))
     application.add_handler(CallbackQueryHandler(detach_callback, pattern='^detach_'))
 
-    # Фоллбэк
-    async def fallback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-        await update.message.reply_text(
-            "🤔 Не понимаю команду. Используй кнопки внизу 👇",
-            reply_markup=main_menu_keyboard()
-        )
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, fallback))
-
-    # Проверка уведомлений
+    # ===== Уведомления =====
     application.job_queue.run_repeating(check_notifications, interval=5, first=5)
 
     print("🤖 Бот запущен. Нажми Ctrl+C для остановки.")
