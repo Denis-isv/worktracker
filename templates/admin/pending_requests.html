@@ -81,17 +81,13 @@
                 <div>
                     <h5 class="mb-1">
                         <i class="bi bi-info-circle me-2" style="color: var(--wt-primary);"></i>
-                        {% if show_all %}
-                            Все заявки
-                        {% else %}
-                            Заявки за {{ calendar_month_name }} {{ calendar_year }}
-                        {% endif %}
+                        {% if show_all %}Все заявки{% else %}Заявки за {{ calendar_month_name }} {{ calendar_year }}{% endif %}
                     </h5>
                     <p class="mb-0 text-muted">
                         {% if show_all %}
                             Показаны все ожидающие заявки. Нажмите «Только за месяц», чтобы вернуть фильтр.
                         {% else %}
-                            Показаны только заявки, относящиеся к выбранному месяцу. Кнопка «Показать все заявки» отключит фильтр.
+                            Показаны только заявки, относящиеся к выбранному месяцу.
                         {% endif %}
                     </p>
                 </div>
@@ -188,17 +184,7 @@
                     <tr>
                         <td><strong>{{ ab.user.full_name }}</strong></td>
                         <td>{{ ab.date_start.strftime('%d.%m.%Y') }} – {{ ab.date_end.strftime('%d.%m.%Y') }}</td>
-<<<<<<< HEAD
-                        <td>
-                            {% if ab.type == 'other' and ab.custom_type %}
-                                {{ ab.custom_type }}
-                            {% else %}
-                                {{ ab.type|status_ru }}
-                            {% endif %}
-                        </td>
-=======
-                        <td>{{ ab.type|status_ru }}</td>
->>>>>>> 5f8a7730096432ab1a144800397b81ce1675c230
+                        <td>{% if ab.type == 'other' and ab.custom_type %}{{ ab.custom_type }}{% else %}{{ ab.type|status_ru }}{% endif %}</td>
                         <td>
                             {% if ab.file_path %}
                                 <a href="{{ url_for('static', filename=ab.file_path) }}" target="_blank" class="btn btn-sm btn-outline-secondary"><i class="bi bi-paperclip"></i></a>
@@ -236,17 +222,7 @@
                     <tr>
                         <td><strong>{{ ab.user.full_name }}</strong></td>
                         <td>{{ ab.date_start.strftime('%d.%m.%Y') }} – {{ ab.date_end.strftime('%d.%m.%Y') }}</td>
-<<<<<<< HEAD
-                        <td>
-                            {% if ab.type == 'other' and ab.custom_type %}
-                                {{ ab.custom_type }}
-                            {% else %}
-                                {{ ab.type|status_ru }}
-                            {% endif %}
-                        </td>
-=======
-                        <td>{{ ab.type|status_ru }}</td>
->>>>>>> 5f8a7730096432ab1a144800397b81ce1675c230
+                        <td>{% if ab.type == 'other' and ab.custom_type %}{{ ab.custom_type }}{% else %}{{ ab.type|status_ru }}{% endif %}</td>
                         <td>
                             <a href="{{ url_for('admin_approve_absence_deletion', absence_id=ab.id, cal_year=calendar_year, cal_month=calendar_month, show_all=1 if show_all else 0) }}" class="btn btn-sm btn-success"><i class="bi bi-check-lg"></i></a>
                             <a href="{{ url_for('admin_reject_absence_deletion', absence_id=ab.id, cal_year=calendar_year, cal_month=calendar_month, show_all=1 if show_all else 0) }}" class="btn btn-sm btn-danger"><i class="bi bi-x-lg"></i></a>
