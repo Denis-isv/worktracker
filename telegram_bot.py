@@ -378,7 +378,7 @@ async def receive_email(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Сохраняем числовой chat_id
         user.telegram_chat_id = str(chat_id)
 
-        # Сохраняем username, если есть; иначе — имя или id
+        # Сохраняем username, если есть
         if tg_user.username:
             user.telegram_id = f"@{tg_user.username}"
         elif not user.telegram_id:
