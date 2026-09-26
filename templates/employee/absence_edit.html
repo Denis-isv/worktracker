@@ -68,9 +68,7 @@
                     <div class="mb-3">
                         <label for="type" class="form-label">Тип</label>
                         <select class="form-select" id="type" name="type" required>
-                            <option value="vacation" {% if absence.type == 'vacation' %}selected{% endif %}>Отпуск</option>
-                            <option value="sick" {% if absence.type == 'sick' %}selected{% endif %}>Больничный</option>
-                            <option value="other" {% if absence.type == 'other' %}selected{% endif %}>Другое</option>
+                            type_ru = {'vacation': 'отпуск', 'sick': 'больничный', 'other': custom_type or 'другое'}.get(absence_type, absence_type)
                         </select>
                     </div>
 

@@ -347,7 +347,6 @@ def employee_weekly_schedule():
         num_days=num_days
     )
 
-
 @app.route('/employee/month_summary')
 @login_required
 def employee_month_summary():
@@ -363,6 +362,7 @@ def employee_month_summary():
     start_date = date(year, month, 1)
     end_date = date(year, month, calendar.monthrange(year, month)[1])
 
+    # === Личные итоги ===
     total_worked_minutes = 0
     total_eff_minutes = 0
     total_late_minutes = 0
@@ -394,9 +394,64 @@ def employee_month_summary():
         'final_hours': final_minutes / 60
     }
 
+    # === Общие итоги по всем сотрудникам ===
+    employees = User.query.filter_by(role='employee', status='active').all()
+    all_summary = []
+    grand_worked = 0
+    grand_eff = 0
+    grand_late = 0
+    grand_final = 0
+
+    for emp in employees:
+        emp_worked = 0
+        emp_eff = 0
+        emp_late = 0
+
+        emp_atts = Attendance.query.filter(
+            Attendance.user_id == emp.id,
+            Attendance.date >= start_date,
+            Attendance.date <= end_date,
+            Attendance.status == 'confirmed'
+        ).all()
+
+        for att in emp_atts:
+            if att.actual_start and att.actual_end:
+                worked = calculate_worked_hours(att.actual_start, att.actual_end)
+                wm = int(worked.total_seconds() // 60)
+                emp_worked += wm
+                emp_eff += int(wm * att.efficiency)
+                if att.early_start and att.early_start > 0:
+                    emp_late += att.early_start
+
+        emp_avg = (emp_eff / emp_worked * 100) if emp_worked > 0 else 0
+        emp_final = emp_eff - emp_late
+
+        all_summary.append({
+            'user': emp,
+            'worked_hours': emp_worked / 60,
+            'avg_efficiency': emp_avg,
+            'late_hours': emp_late / 60,
+            'final_hours': emp_final / 60
+        })
+
+        grand_worked += emp_worked
+        grand_eff += emp_eff
+        grand_late += emp_late
+        grand_final += emp_final
+
+    grand_avg = (grand_eff / grand_worked * 100) if grand_worked > 0 else 0
+    grand_totals = {
+        'worked_hours': grand_worked / 60,
+        'avg_efficiency': grand_avg,
+        'late_hours': grand_late / 60,
+        'final_hours': grand_final / 60
+    }
+
     return render_template(
         'employee/month_summary.html',
         summary=summary,
+        all_summary=all_summary,
+        grand_totals=grand_totals,
         year=year,
         month=month,
         month_name=MONTHS_RU[month - 1]
@@ -1678,7 +1733,6 @@ def admin_edit_user(user_id):
 
     return render_template('admin/edit_user.html', user=user)
 
-
 @app.route('/admin/month_summary', methods=['GET'])
 @login_required
 def admin_month_summary():
@@ -1697,6 +1751,12 @@ def admin_month_summary():
     employees = User.query.filter_by(role='employee', status='active').all()
 
     summary = []
+    # Общие итоги
+    grand_worked = 0
+    grand_eff = 0
+    grand_late = 0
+    grand_final = 0
+
     for emp in employees:
         total_worked_minutes = 0
         total_eff_minutes = 0
@@ -1730,9 +1790,24 @@ def admin_month_summary():
             'final_hours': final_minutes / 60
         })
 
+        grand_worked += total_worked_minutes
+        grand_eff += total_eff_minutes
+        grand_late += total_late_minutes
+        grand_final += final_minutes
+
+    grand_avg_eff = (grand_eff / grand_worked * 100) if grand_worked > 0 else 0
+
+    grand_totals = {
+        'worked_hours': grand_worked / 60,
+        'avg_efficiency': grand_avg_eff,
+        'late_hours': grand_late / 60,
+        'final_hours': grand_final / 60
+    }
+
     return render_template(
         'admin/month_summary.html',
         summary=summary,
+        grand_totals=grand_totals,
         year=year,
         month=month,
         month_name=MONTHS_RU[month - 1]

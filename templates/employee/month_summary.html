@@ -14,7 +14,7 @@
             </div>
             <div class="col-auto">
                 <label for="month" class="form-label">Месяц</label>
-                <select class="form-select" id="month" name="month">
+                <select class="form-select month-select" id="month" name="month">
                     {% for m in range(1, 13) %}
                     <option value="{{ m }}" {% if m == month %}selected{% endif %}>{{ m }}</option>
                     {% endfor %}
@@ -29,7 +29,9 @@
     </div>
 </div>
 
-<div class="row g-3">
+<!-- Мои итоги -->
+<h5 class="mb-3"><i class="bi bi-person-circle me-2" style="color: var(--wt-primary);"></i>Мои итоги</h5>
+<div class="row g-3 mb-4">
     <div class="col-md-6 col-lg-3">
         <div class="stat-card stat-primary">
             <i class="bi bi-clock-history stat-icon"></i>
@@ -56,6 +58,82 @@
             <i class="bi bi-trophy stat-icon"></i>
             <div class="stat-label">Итого часов</div>
             <div class="stat-value">{{ "%.2f"|format(summary.final_hours) }}</div>
+        </div>
+    </div>
+</div>
+
+<!-- Общие итоги -->
+<h5 class="mb-3"><i class="bi bi-people me-2" style="color: var(--wt-primary);"></i>Общие итоги по всем сотрудникам</h5>
+<div class="row g-3 mb-4">
+    <div class="col-md-6 col-lg-3">
+        <div class="stat-card stat-primary">
+            <i class="bi bi-clock-history stat-icon"></i>
+            <div class="stat-label">Всего отработано</div>
+            <div class="stat-value">{{ "%.2f"|format(grand_totals.worked_hours) }}</div>
+        </div>
+    </div>
+    <div class="col-md-6 col-lg-3">
+        <div class="stat-card stat-info">
+            <i class="bi bi-speedometer stat-icon"></i>
+            <div class="stat-label">Средний e% общий</div>
+            <div class="stat-value">{{ "%.1f"|format(grand_totals.avg_efficiency) }}%</div>
+        </div>
+    </div>
+    <div class="col-md-6 col-lg-3">
+        <div class="stat-card stat-warning">
+            <i class="bi bi-alarm stat-icon"></i>
+            <div class="stat-label">Опоздания всего</div>
+            <div class="stat-value">{{ "%.2f"|format(grand_totals.late_hours) }}</div>
+        </div>
+    </div>
+    <div class="col-md-6 col-lg-3">
+        <div class="stat-card stat-success">
+            <i class="bi bi-trophy stat-icon"></i>
+            <div class="stat-label">Итого часов всего</div>
+            <div class="stat-value">{{ "%.2f"|format(grand_totals.final_hours) }}</div>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header"><i class="bi bi-table me-2"></i>Итоги всех сотрудников</div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover mb-0">
+                <thead>
+                    <tr>
+                        <th>Сотрудник</th>
+                        <th>Отработано часов</th>
+                        <th>Средний e%</th>
+                        <th>Опоздания (часов)</th>
+                        <th>Итого часов</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in all_summary %}
+                    <tr {% if row.user.id == current_user.id %}class="table-info"{% endif %}>
+                        <td>
+                            <i class="bi bi-person-circle me-2" style="color: var(--wt-primary);"></i>
+                            <strong>{{ row.user.full_name }}</strong>
+                            {% if row.user.id == current_user.id %}<span class="badge bg-primary ms-2">это вы</span>{% endif %}
+                        </td>
+                        <td>{{ "%.2f"|format(row.worked_hours) }}</td>
+                        <td><span class="badge bg-info">{{ "%.1f"|format(row.avg_efficiency) }}%</span></td>
+                        <td><span class="badge bg-warning text-dark">{{ "%.2f"|format(row.late_hours) }}</span></td>
+                        <td><span class="badge bg-success">{{ "%.2f"|format(row.final_hours) }}</span></td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+                <tfoot>
+                    <tr class="table-light">
+                        <th>Итого</th>
+                        <th>{{ "%.2f"|format(grand_totals.worked_hours) }}</th>
+                        <th>{{ "%.1f"|format(grand_totals.avg_efficiency) }}%</th>
+                        <th>{{ "%.2f"|format(grand_totals.late_hours) }}</th>
+                        <th>{{ "%.2f"|format(grand_totals.final_hours) }}</th>
+                    </tr>
+                </tfoot>
+            </table>
         </div>
     </div>
 </div>

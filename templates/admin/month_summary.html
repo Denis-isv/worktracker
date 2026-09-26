@@ -29,7 +29,40 @@
     </div>
 </div>
 
+<!-- Общие итоги -->
+<div class="row g-3 mb-4">
+    <div class="col-md-3">
+        <div class="stat-card stat-primary">
+            <i class="bi bi-clock-history stat-icon"></i>
+            <div class="stat-label">Отработано часов всего</div>
+            <div class="stat-value">{{ "%.2f"|format(grand_totals.worked_hours) }}</div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="stat-card stat-info">
+            <i class="bi bi-speedometer stat-icon"></i>
+            <div class="stat-label">Средний e% (общий)</div>
+            <div class="stat-value">{{ "%.1f"|format(grand_totals.avg_efficiency) }}%</div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="stat-card stat-warning">
+            <i class="bi bi-alarm stat-icon"></i>
+            <div class="stat-label">Опоздания всего (часов)</div>
+            <div class="stat-value">{{ "%.2f"|format(grand_totals.late_hours) }}</div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="stat-card stat-success">
+            <i class="bi bi-trophy stat-icon"></i>
+            <div class="stat-label">Итого часов всего</div>
+            <div class="stat-value">{{ "%.2f"|format(grand_totals.final_hours) }}</div>
+        </div>
+    </div>
+</div>
+
 <div class="card">
+    <div class="card-header"><i class="bi bi-list-ul me-2"></i>По сотрудникам</div>
     <div class="card-body p-0">
         <div class="table-responsive">
             <table class="table table-hover mb-0">
@@ -53,6 +86,15 @@
                     </tr>
                     {% endfor %}
                 </tbody>
+                <tfoot>
+                    <tr class="table-light">
+                        <th>Итого</th>
+                        <th>{{ "%.2f"|format(grand_totals.worked_hours) }}</th>
+                        <th>{{ "%.1f"|format(grand_totals.avg_efficiency) }}%</th>
+                        <th>{{ "%.2f"|format(grand_totals.late_hours) }}</th>
+                        <th>{{ "%.2f"|format(grand_totals.final_hours) }}</th>
+                    </tr>
+                </tfoot>
             </table>
         </div>
     </div>
