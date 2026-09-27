@@ -42,16 +42,80 @@ STATUS_RU = {
     'pending_deletion': '🗑 ожидает удаления',
 }
 
-MENU_BUTTONS = [
-    'Мой профиль', 'Расписание недели',
-    'Плановое время', 'Фактическое время',
-    'Расписание на неделю', 'Расписание всех',
-    'Заявка на отпуск', 'Мои заявки',
-    'Кто работает', 'Итоги месяца',
-    'Помощь', 'Отвязать аккаунт',
-]
-
 CANCEL_TEXT = '❌ Отмена'
+
+
+# ================== КЛАВИАТУРЫ ==================
+def main_menu_keyboard():
+    kb = [
+        [KeyboardButton('📅 Моё расписание'), KeyboardButton('👤 Мой профиль')],
+        [KeyboardButton('⏰ Фактическое время'), KeyboardButton('🏖 Заявка на отпуск')],
+        [KeyboardButton('📂 Мои заявки'), KeyboardButton('👥 Кто работает')],
+        [KeyboardButton('📊 Итоги месяца'), KeyboardButton('👥 Расписание всех')],
+        [KeyboardButton('📋 На неделю'), KeyboardButton('❓ Помощь')],
+        [KeyboardButton('🔓 Отвязать аккаунт')],
+    ]
+    return ReplyKeyboardMarkup(kb, resize_keyboard=True)
+
+
+def cancel_keyboard():
+    return ReplyKeyboardMarkup([[KeyboardButton(CANCEL_TEXT)]], resize_keyboard=True)
+
+
+def schedule_week_keyboard(week_start, user, offset):
+    today = date.today()
+    row_days = []
+    for i in range(7):
+        d = week_start + timedelta(days=i)
+        sch = Schedule.query.filter_by(user_id=user.id, date=d).first()
+        att = Attendance.query.filter(
+            Attendance.user_id == user.id,
+            Attendance.date == d,
+            Attendance.status != 'rejected'
+        ).first()
+        if sch and sch.status == 'rejected':
+            sch = None
+
+        has_plan = sch is not None
+        has_fact = att is not None
+
+        if has_plan and sch.is_day_off:
+            mark = "🏖"
+        elif has_plan and has_fact:
+            mark = "✅"
+        elif has_plan:
+            mark = "📋"
+        elif has_fact:
+            mark = "⏰"
+        else:
+            mark = "▫️"
+
+        marker = "🔸" if d == today else ""
+        label = f"{DAYS_RU_SHORT[i]} {d.day} {mark}{marker}"
+        row_days.append(InlineKeyboardButton(label, callback_data=f"sched_day_{d.isoformat()}"))
+
+    end_of_week = week_start + timedelta(days=6)
+    nav_row = [
+        InlineKeyboardButton("⬅️", callback_data=f"sched_week_{offset - 1}"),
+        InlineKeyboardButton(f"{week_start.strftime('%d.%m')}–{end_of_week.strftime('%d.%m')}",
+                             callback_data="sched_noop"),
+        InlineKeyboardButton("➡️", callback_data=f"sched_week_{offset + 1}"),
+    ]
+    return InlineKeyboardMarkup([nav_row, row_days[:4], row_days[4:]])
+
+
+def schedule_day_keyboard(d, sch, att):
+    ds = d.isoformat()
+    rows = []
+    rows.append([InlineKeyboardButton("🕐 Изменить план (время)", callback_data=f"sched_time_{ds}")])
+    rows.append([InlineKeyboardButton("📝 Задачи на день (план)", callback_data=f"sched_tasks_{ds}")])
+    if att:
+        rows.append([InlineKeyboardButton("✅ Что сделал (факт)", callback_data=f"sched_note_{ds}")])
+    rows.append([InlineKeyboardButton("🏖 Отметить выходным", callback_data=f"sched_dayoff_{ds}")])
+    if sch:
+        rows.append([InlineKeyboardButton("🗑 Очистить день", callback_data=f"sched_clear_{ds}")])
+    rows.append([InlineKeyboardButton("⬅️ К расписанию недели", callback_data="sched_week_0")])
+    return InlineKeyboardMarkup(rows)
 
 
 # ================== УТИЛИТЫ ==================
@@ -70,69 +134,68 @@ def esc(text):
 
 
 def normalize_name(s):
-    """Оборин М.С. → оборинмс, Оборин Михаил Сергеевич → оборинмихаилсергеевич."""
     if not s:
         return ''
-    s = s.lower().replace('.', '').replace(' ', '').replace(',', '')
-    return s
+    return s.lower().replace('.', '').replace(' ', '').replace(',', '')
 
 
 def find_user_by_name(name_str):
-    """Ищет пользователя по ФИО: точно по началу нормализованных строк."""
     if not name_str:
         return None
     target = normalize_name(name_str)
     if not target:
         return None
-
-    # 1. Полное совпадение
     for u in User.query.filter_by(role='employee', status='active').all():
         if normalize_name(u.full_name) == target:
             return u
-
-    # 2. Совпадение по префиксу: "оборинмс" должно совпасть с "оборинмихаилсергеевич"
     for u in User.query.filter_by(role='employee', status='active').all():
-        norm = normalize_name(u.full_name)
-        if norm.startswith(target):
+        if normalize_name(u.full_name).startswith(target):
             return u
-
-    # 3. Совпадение по фамилии: если в сообщении "Оборин М.С." — берём первого с фамилией "Оборин"
-    # Разбиваем пользователя на части, сравниваем первую часть
     for u in User.query.filter_by(role='employee', status='active').all():
         parts = u.full_name.split()
         if not parts:
             continue
         surname = normalize_name(parts[0])
         if surname and target.startswith(surname):
-            # Проверяем, что после фамилии в target идёт первая буква имени или инициал
             return u
-
     return None
 
 
-def main_menu_keyboard():
-    kb = [
-        [KeyboardButton('👤 Мой профиль'), KeyboardButton('📋 Расписание недели')],
-        [KeyboardButton('🕐 Плановое время'), KeyboardButton('⏰ Фактическое время')],
-        [KeyboardButton('📅 Расписание на неделю'), KeyboardButton('👥 Расписание всех')],
-        [KeyboardButton('🏖 Заявка на отпуск'), KeyboardButton('📂 Мои заявки')],
-        [KeyboardButton('👥 Кто работает'), KeyboardButton('📊 Итоги месяца')],
-        [KeyboardButton('❓ Помощь'), KeyboardButton('🔓 Отвязать аккаунт')],
-    ]
-    return ReplyKeyboardMarkup(kb, resize_keyboard=True)
+def find_user_by_telegram(update_or_user, chat_id=None):
+    tg_user = None
+    if hasattr(update_or_user, 'effective_user'):
+        tg_user = update_or_user.effective_user
+        if chat_id is None:
+            chat_id = update_or_user.effective_chat.id
+    else:
+        tg_user = update_or_user
 
-
-def cancel_keyboard():
-    return ReplyKeyboardMarkup([[KeyboardButton(CANCEL_TEXT)]], resize_keyboard=True)
+    if chat_id is not None:
+        u = User.query.filter_by(telegram_chat_id=str(chat_id)).first()
+        if u:
+            return u
+    if tg_user and getattr(tg_user, 'id', None):
+        u = User.query.filter_by(telegram_chat_id=str(tg_user.id)).first()
+        if u:
+            return u
+    if tg_user and getattr(tg_user, 'username', None):
+        u = User.query.filter(User.telegram_id == f"@{tg_user.username}").first()
+        if u:
+            return u
+    return None
 
 
 def clear_state(context):
     keys = [
-        'state', 'plan_date', 'plan_start', 'plan_end',
-        'fact_date', 'fact_start', 'fact_end', 'fact_eff',
+        'state', 'fact_date', 'fact_start', 'fact_end', 'fact_eff',
         'abs_type', 'abs_start', 'abs_end', 'abs_custom',
         'week_plan_idx', 'week_plan_data', 'week_start', 'week_temp_start',
-        'pending_plan', 'pending_fact',
+        'pending_plan', 'pending_fact', 'pending_daily', 'pending_week_plan',
+        'sched_edit_date', 'sched_edit_time_start',
+        'sched_day_msg_id', 'pending_sched_edit',
+        'week_overwrite_idx',
+        'sched_tasks_mode',     # add / replace
+        'sched_edit_kind',      # tasks / note
     ]
     for k in keys:
         context.user_data.pop(k, None)
@@ -172,68 +235,119 @@ def get_fonts():
     return {'title': default, 'header': default, 'cell': default, 'small': default}
 
 
+def _tasks_short(tasks, limit=250):
+    if not tasks:
+        return ''
+    lines = []
+    for line in tasks.split('\n'):
+        s = line.strip()
+        if not s:
+            continue
+        if s.startswith('-'):
+            s = s[1:].strip()
+        if s:
+            lines.append(s)
+    joined = ' • '.join(lines)
+    if len(joined) > limit:
+        joined = joined[:limit - 3] + '...'
+    return joined
+
+
+def _task_lines(text):
+    """Возвращает список строк задач без дефиса."""
+    out = []
+    if not text:
+        return out
+    for line in text.split('\n'):
+        s = line.strip()
+        if not s:
+            continue
+        if s.startswith('-'):
+            s = s[1:].strip()
+        if s:
+            out.append(s)
+    return out
+
+
+def _norm_task_lines(text):
+    """Нормализует ввод задач: каждая строка с '- '."""
+    out = []
+    for line in text.split('\n'):
+        s = line.rstrip()
+        if not s.strip():
+            continue
+        s = s.strip()
+        if not s.startswith('-'):
+            s = '- ' + s
+        out.append(s)
+    return out
+
+
 # ================== ТЕКСТЫ ==================
-def week_text(user, offset):
+def profile_text(user):
     today = date.today()
-    start_of_week = today - timedelta(days=today.weekday()) + timedelta(weeks=offset)
-    end_of_week = start_of_week + timedelta(days=6)
+    schedule = Schedule.query.filter_by(user_id=user.id, date=today).first()
+    attendance = Attendance.query.filter(
+        Attendance.user_id == user.id, Attendance.date == today,
+        Attendance.status != 'rejected'
+    ).first()
+    absence = Absence.query.filter(
+        Absence.user_id == user.id,
+        Absence.date_start <= today, Absence.date_end >= today,
+        Absence.status == 'approved'
+    ).first()
 
-    text = f"📋 <b>Расписание на неделю</b>\n"
-    text += f"{start_of_week.strftime('%d.%m')} – {end_of_week.strftime('%d.%m.%Y')}\n\n"
+    role_ru = ROLE_RU.get(user.role, user.role)
+    text = f"👤 <b>{esc(user.full_name)}</b>\n"
+    text += f"📧 {esc(user.email)}\n"
+    text += f"🎭 Роль: {esc(role_ru)}\n"
+    if user.telegram_id:
+        text += f"💬 {esc(user.telegram_id)}\n"
+    text += "\n"
 
-    for i in range(7):
-        day = start_of_week + timedelta(days=i)
-        sch = Schedule.query.filter_by(user_id=user.id, date=day).first()
-        att = Attendance.query.filter(
-            Attendance.user_id == user.id,
-            Attendance.date == day,
-            Attendance.status != 'rejected'
-        ).first()
-        if sch and sch.status == 'rejected':
-            sch = None
+    if absence:
+        abs_ru = ABS_TYPE_RU.get(absence.type, absence.type)
+        if absence.type == 'other' and absence.custom_type:
+            abs_ru = f"📌 {esc(absence.custom_type)}"
+        text += f"{abs_ru} до {absence.date_end.strftime('%d.%m.%Y')}\n\n"
 
-        day_short = DAYS_RU_SHORT[day.weekday()]
-        date_str = day.strftime('%d.%m')
-        marker = " 🔸" if day == today else ""
+    text += f"<b>Сегодня — {DAYS_RU_FULL[today.weekday()]}, {today.strftime('%d.%m.%Y')}:</b>\n"
 
-        if sch:
-            if sch.is_day_off:
-                line = f"• <b>{day_short} {date_str}</b>{marker}: 🏖 выходной"
-            else:
-                line = f"• <b>{day_short} {date_str}</b>{marker}: 📋 {sch.planned_start.strftime('%H:%M')}–{sch.planned_end.strftime('%H:%M')}"
-                if sch.plan_text:
-                    line += f"\n   📝 {esc(sch.plan_text[:200])}"
+    if schedule and schedule.status != 'rejected':
+        if schedule.is_day_off:
+            text += "🏖 План: выходной\n"
         else:
-            line = f"• <b>{day_short} {date_str}</b>{marker}: —"
+            text += f"📋 План: {schedule.planned_start.strftime('%H:%M')} – {schedule.planned_end.strftime('%H:%M')}\n"
+            if schedule.plan_text:
+                text += f"📝 <b>Задачи на день (план):</b>\n{esc(schedule.plan_text)}\n"
+    else:
+        text += "📋 План: не указан\n"
 
-        if att:
-            line += f"\n   ⏰ факт: {att.actual_start.strftime('%H:%M')}–{att.actual_end.strftime('%H:%M')} (e% {int(att.efficiency*100)})"
-            if att.note:
-                line += f"\n   📝 {esc(att.note[:200])}"
-
-        text += line + "\n"
-
+    if attendance:
+        text += f"⏰ Факт: {attendance.actual_start.strftime('%H:%M')} – {attendance.actual_end.strftime('%H:%M')}\n"
+        text += f"📈 Эффективность: {int(attendance.efficiency * 100)}%\n"
+        if attendance.note:
+            text += f"✅ <b>Что сделал:</b>\n{esc(attendance.note)}\n"
+        text += f"🎯 Статус: {esc(STATUS_RU.get(attendance.status, attendance.status))}"
     return text
 
 
 def who_text():
     today = date.today()
     plans = Schedule.query.filter_by(date=today, status='approved').all()
-
     text = f"👥 <b>Кто работает сегодня ({today.strftime('%d.%m.%Y')})</b>\n\n"
     found = False
     for plan in plans:
         if plan.is_day_off or not plan.user or plan.user.status != 'active':
             continue
+        if not plan.planned_start or not plan.planned_end:
+            continue
         found = True
-        if plan.planned_start and plan.planned_end:
-            text += f"• {esc(plan.user.full_name)}: {plan.planned_start.strftime('%H:%M')}–{plan.planned_end.strftime('%H:%M')}\n"
-            if plan.plan_text:
-                text += f"   📝 {esc(plan.plan_text[:200])}\n"
-
+        text += f"• {esc(plan.user.full_name)}: {plan.planned_start.strftime('%H:%M')}–{plan.planned_end.strftime('%H:%M')}\n"
+        if plan.plan_text:
+            text += f"   📝 {esc(_tasks_short(plan.plan_text, limit=200))}\n"
     if not found:
         text += "Сегодня никто не работает."
-
     return text
 
 
@@ -279,62 +393,10 @@ def summary_text(user, offset_months=0):
     )
 
 
-def profile_text(user):
-    today = date.today()
-    schedule = Schedule.query.filter_by(user_id=user.id, date=today).first()
-    attendance = Attendance.query.filter(
-        Attendance.user_id == user.id,
-        Attendance.date == today,
-        Attendance.status != 'rejected'
-    ).first()
-    absence = Absence.query.filter(
-        Absence.user_id == user.id,
-        Absence.date_start <= today,
-        Absence.date_end >= today,
-        Absence.status == 'approved'
-    ).first()
-
-    role_ru = ROLE_RU.get(user.role, user.role)
-    text = f"👤 <b>{esc(user.full_name)}</b>\n"
-    text += f"📧 {esc(user.email)}\n"
-    text += f"🎭 Роль: {esc(role_ru)}\n"
-    if user.telegram_id:
-        text += f"💬 {esc(user.telegram_id)}\n"
-    text += "\n"
-
-    if absence:
-        abs_ru = ABS_TYPE_RU.get(absence.type, absence.type)
-        if absence.type == 'other' and absence.custom_type:
-            abs_ru = f"📌 {esc(absence.custom_type)}"
-        text += f"{abs_ru} до {absence.date_end.strftime('%d.%m.%Y')}\n\n"
-
-    text += f"<b>Сегодня — {DAYS_RU_FULL[today.weekday()]}, {today.strftime('%d.%m.%Y')}:</b>\n"
-
-    if schedule and schedule.status != 'rejected':
-        if schedule.is_day_off:
-            text += "🏖 План: выходной\n"
-        else:
-            text += f"📋 План: {schedule.planned_start.strftime('%H:%M')} – {schedule.planned_end.strftime('%H:%M')}\n"
-            if schedule.plan_text:
-                text += f"📝 <b>Задачи на день:</b>\n{esc(schedule.plan_text)}\n"
-    else:
-        text += "📋 План: не указан\n"
-
-    if attendance:
-        text += f"⏰ Факт: {attendance.actual_start.strftime('%H:%M')} – {attendance.actual_end.strftime('%H:%M')}\n"
-        text += f"📈 Эффективность: {int(attendance.efficiency * 100)}%\n"
-        if attendance.note:
-            text += f"📝 <b>Что сделано:</b>\n{esc(attendance.note)}\n"
-        text += f"🎯 Статус: {esc(STATUS_RU.get(attendance.status, attendance.status))}"
-
-    return text
-
-
 def absences_text(user):
     absences = Absence.query.filter_by(user_id=user.id).order_by(Absence.date_start.desc()).limit(10).all()
     if not absences:
         return "📂 У тебя пока нет заявок на отпуск/больничный."
-
     text = "📂 <b>Твои последние заявки:</b>\n\n"
     for ab in absences:
         if ab.type == 'other' and ab.custom_type:
@@ -348,7 +410,7 @@ def absences_text(user):
             f"📊 {esc(status)}\n"
         )
         if ab.file_path:
-            text += f"📎 файл прикреплён\n"
+            text += "📎 файл прикреплён\n"
         text += "\n"
     return text
 
@@ -370,8 +432,7 @@ def generate_all_summary_image(offset_months=0):
         wm = em = late = 0
         atts = Attendance.query.filter(
             Attendance.user_id == emp.id,
-            Attendance.date >= start_date,
-            Attendance.date <= end_date,
+            Attendance.date >= start_date, Attendance.date <= end_date,
             Attendance.status == 'confirmed'
         ).all()
         for att in atts:
@@ -446,7 +507,6 @@ def generate_all_week_image(offset=0):
     end_of_week = start_of_week + timedelta(days=6)
 
     employees = User.query.filter_by(role='employee', status='active').all()
-
     rows = []
     for emp in employees:
         emp_row = []
@@ -458,9 +518,11 @@ def generate_all_week_image(offset=0):
                 if sch.is_day_off:
                     emp_row.append('Вых')
                     has_any = True
-                else:
+                elif sch.planned_start and sch.planned_end:
                     emp_row.append(f"{sch.planned_start.strftime('%H:%M')}–{sch.planned_end.strftime('%H:%M')}")
                     has_any = True
+                else:
+                    emp_row.append('—')
             else:
                 emp_row.append('—')
         if has_any:
@@ -484,10 +546,8 @@ def generate_all_week_image(offset=0):
 
     y0 = header_height
     draw.rectangle([0, y0, img_width, y0 + table_header_height], fill='#e5e7eb')
-
     name_col_width = 230
     day_col_width = (img_width - name_col_width - 40) / 7
-
     draw.text((30, y0 + 30), 'Сотрудник', fill='#1f2937', font=f['header'])
 
     for i in range(7):
@@ -500,10 +560,8 @@ def generate_all_week_image(offset=0):
         y1 = y0 + table_header_height + i * row_height
         bg = '#ffffff' if i % 2 == 0 else '#f1f5f9'
         draw.rectangle([0, y1, img_width, y1 + row_height], fill=bg)
-
         name_short = name if len(name) <= 22 else name[:20] + '...'
         draw.text((30, y1 + 16), name_short, fill='#1f2937', font=f['cell'])
-
         for j, cell in enumerate(emp_row):
             cell_x = name_col_width + 30 + int(j * day_col_width)
             if cell == 'Вых':
@@ -514,8 +572,8 @@ def generate_all_week_image(offset=0):
                 draw.text((cell_x + 5, y1 + 16), cell, fill='#4f46e5', font=f['cell'])
 
     if not rows:
-        y_empty = y0 + table_header_height + 30
-        draw.text((30, y_empty), 'Пока никто не составил расписание на эту неделю.',
+        draw.text((30, y0 + table_header_height + 30),
+                  'Пока никто не составил расписание на эту неделю.',
                   fill='#6b7280', font=f['header'])
 
     draw.text((30, img_height - 40),
@@ -528,7 +586,96 @@ def generate_all_week_image(offset=0):
     return buf
 
 
-# ================== ПАРСИНГ СТРУКТУРИРОВАННЫХ СООБЩЕНИЙ ==================
+def generate_my_week_image(user, offset=0):
+    today = date.today()
+    start_of_week = today - timedelta(days=today.weekday()) + timedelta(weeks=offset)
+    end_of_week = start_of_week + timedelta(days=6)
+
+    img_width = 1100
+    header_height = 170
+    day_height = 175
+    footer_height = 70
+    img_height = header_height + day_height * 7 + footer_height
+
+    img = Image.new('RGB', (img_width, img_height), '#f8fafc')
+    draw = ImageDraw.Draw(img)
+    f = get_fonts()
+
+    draw.rectangle([0, 0, img_width, header_height], fill='#4f46e5')
+    draw.text((40, 25), 'МОЁ РАСПИСАНИЕ', fill='white', font=f['title'])
+    draw.text((40, 85), f"{start_of_week.strftime('%d.%m')} – {end_of_week.strftime('%d.%m.%Y')}",
+              fill='#e0e7ff', font=f['header'])
+    draw.text((40, 125), f"👤 {user.full_name}", fill='#c7d2fe', font=f['small'])
+
+    for i in range(7):
+        d = start_of_week + timedelta(days=i)
+        y = header_height + i * day_height
+        sch = Schedule.query.filter_by(user_id=user.id, date=d).first()
+        att = Attendance.query.filter(
+            Attendance.user_id == user.id,
+            Attendance.date == d,
+            Attendance.status != 'rejected'
+        ).first()
+        if sch and sch.status == 'rejected':
+            sch = None
+
+        is_today = (d == today)
+        bg = '#eef2ff' if is_today else ('#ffffff' if i % 2 == 0 else '#f9fafb')
+        draw.rectangle([0, y, img_width, y + day_height], fill=bg)
+        if is_today:
+            draw.rectangle([0, y, img_width - 2, y + day_height - 2], outline='#4f46e5', width=3)
+
+        day_name = DAYS_RU_FULL[d.weekday()]
+        date_str = d.strftime('%d.%m.%Y')
+        draw.text((40, y + 20), day_name, fill='#1f2937', font=f['header'])
+        draw.text((40, y + 55), date_str, fill='#6b7280', font=f['cell'])
+        if is_today:
+            draw.text((40, y + 88), '🔸 СЕГОДНЯ', fill='#4f46e5', font=f['small'])
+
+        draw.line([(280, y + 15), (280, y + day_height - 15)], fill='#e5e7eb', width=2)
+
+        info_x = 310
+        line_y = y + 15
+
+        if sch and sch.is_day_off:
+            draw.text((info_x, line_y), "🏖 Выходной", fill='#6b7280', font=f['cell'])
+        elif sch and sch.planned_start and sch.planned_end:
+            plan_txt = f"📋 План: {sch.planned_start.strftime('%H:%M')}–{sch.planned_end.strftime('%H:%M')}"
+            draw.text((info_x, line_y), plan_txt, fill='#1e40af', font=f['cell'])
+        else:
+            draw.text((info_x, line_y), "📋 План: —", fill='#9ca3af', font=f['cell'])
+        line_y += 30
+
+        if att and att.actual_start and att.actual_end:
+            eff = int(att.efficiency * 100)
+            fact_txt = f"⏰ Факт: {att.actual_start.strftime('%H:%M')}–{att.actual_end.strftime('%H:%M')}  •  e% {eff}"
+            draw.text((info_x, line_y), fact_txt, fill='#047857', font=f['cell'])
+        else:
+            draw.text((info_x, line_y), "⏰ Факт: —", fill='#9ca3af', font=f['cell'])
+        line_y += 30
+
+        # План — задачи
+        if sch and sch.plan_text:
+            short = _tasks_short(sch.plan_text, limit=90)
+            draw.text((info_x, line_y), f"📝 План: {short}", fill='#4f46e5', font=f['small'])
+            line_y += 24
+
+        # Факт — что сделал
+        if att and att.note:
+            short = _tasks_short(att.note, limit=90)
+            draw.text((info_x, line_y), f"✅ Сделал: {short}", fill='#047857', font=f['small'])
+
+    draw.text((40, img_height - 35),
+              f'Сформировано: {datetime.now().strftime("%d.%m.%Y %H:%M")}',
+              fill='#9ca3af', font=f['small'])
+
+    buf = BytesIO()
+    img.save(buf, format='PNG')
+    buf.seek(0)
+    return buf
+
+
+# ================== ПАРСИНГ ==================
 def parse_time_range(text):
     m = re.search(r'(\d{1,2}:\d{2})\s*[-–—]\s*(\d{1,2}:\d{2})', text)
     if not m:
@@ -579,7 +726,6 @@ def parse_weekly_structured(text):
                     'start': st, 'end': et,
                     'plan_text': tasks_text or None
                 })
-
     return week_start, days_data
 
 
@@ -591,28 +737,24 @@ def parse_daily_structured(text):
         d = datetime.strptime(dm.group(1), '%d.%m.%Y').date()
     except ValueError:
         return None
-
     st, et = parse_time_range(text)
     if not st or not et:
         return None
-
-    em = re.search(r'[Ээ]ффективность\s*:\s*(\d+)', text)
+    em = re.search(r'[Ээ]ффективность\s*:?\s*(\d+)', text)
     eff = int(em.group(1)) if em else 100
-
-    tasks_lines = [l.strip() for l in text.split('\n') if l.strip().startswith('-')]
+    tasks_lines = []
+    for line in text.split('\n'):
+        s = line.strip()
+        if s.startswith('-'):
+            tasks_lines.append(s)
     tasks_text = '\n'.join(tasks_lines)
-
     return {'date': d, 'start': st, 'end': et, 'eff': eff, 'plan_text': tasks_text}
 
 
 def extract_name_from_message(text, key):
-    """Ищет ФИО в тексте. key = 'расписание' или 'дейли'."""
     lines = text.split('\n')
-    # Для #расписание: ФИО идёт после строки со "Спринт ...", обычно 2-я или 3-я строка
-    # Для #дейли: ФИО идёт после "Эффективность: N%"
     if key == 'расписание':
-        # Ищем первую строку, в которой есть фамилия с точкой/инициалами или 2-3 слова
-        for i, line in enumerate(lines):
+        for line in lines:
             line = line.strip()
             if not line or line.startswith('#') or line.lower().startswith('спринт'):
                 continue
@@ -620,7 +762,6 @@ def extract_name_from_message(text, key):
                re.match(r'^[А-ЯЁ][а-яё]+\s+[А-ЯЁ][а-яё]+\s+[А-ЯЁ][а-яё]+$', line):
                 return line
     elif key == 'дейли':
-        # ФИО обычно после "Эффективность: N%" или в первых строках
         found_eff = False
         for line in lines:
             line = line.strip()
@@ -631,29 +772,40 @@ def extract_name_from_message(text, key):
                 continue
             if found_eff and re.match(r'^[А-ЯЁ][а-яё]+', line):
                 return line
-            # Или сразу ФИО
             if re.match(r'^[А-ЯЁ][а-яё]+\s+[А-ЯЁ][а-яё]+', line):
                 return line
     return None
 
 
-async def send_personal_summary(bot, user, text):
-    """Отправляет уточнение в личку сотруднику."""
+async def send_personal_summary(bot, user, text, reply_markup=None):
     if not user.telegram_chat_id:
         return False
     try:
-        await bot.send_message(chat_id=user.telegram_chat_id, text=text, parse_mode='HTML')
+        await bot.send_message(
+            chat_id=user.telegram_chat_id,
+            text=text,
+            parse_mode='HTML',
+            reply_markup=reply_markup
+        )
         return True
     except Exception as e:
         logger.error(f"Не удалось отправить личное сообщение {user.id}: {e}")
         return False
 
 
-async def handle_structured_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Обработка сообщений с хэштегами #расписание и #дейли.
+def _ser_day(day):
+    if day['is_day_off']:
+        return {'is_day_off': True, 'plan_text': day.get('plan_text')}
+    return {
+        'is_day_off': False,
+        'start': day['start'].strftime('%H:%M'),
+        'end': day['end'].strftime('%H:%M'),
+        'plan_text': day.get('plan_text'),
+    }
 
-    Сотрудник определяется ПО ФИО в тексте. Все уточнения — в личку.
-    """
+
+# ================== #расписание / #дейли ==================
+async def handle_structured_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = update.message
     chat = update.effective_chat
 
@@ -663,101 +815,176 @@ async def handle_structured_message(update: Update, context: ContextTypes.DEFAUL
         return
 
     text = msg.text
-
     if '#расписание' not in text and '#дейли' not in text:
         return
 
     with app.app_context():
-        # Ищем ФИО в тексте
-        name_str = extract_name_from_message(text, 'расписание' if '#расписание' in text else 'дейли')
-        if not name_str:
-            await msg.reply_text(
-                "⚠️ Не нашёл ФИО в сообщении.\n"
-                "Укажи полное имя или Фамилия И.О. — бот пришлёт уточнения в личку."
-            )
-            return
-
-        user = find_user_by_name(name_str)
+        user = find_user_by_telegram(update)
         if not user:
-            await msg.reply_text(
-                f"⚠️ Не нашёл сотрудника с именем «{esc(name_str)}».\n"
-                f"Обратись к администратору для проверки ФИО."
+            name_str = extract_name_from_message(
+                text, 'расписание' if '#расписание' in text else 'дейли'
             )
+            if name_str:
+                user = find_user_by_name(name_str)
+        if not user:
             return
 
-        saved_count = 0
-        conflict_days = []
-
+        # ---------------- #расписание ----------------
         if '#расписание' in text:
             week_start, days_data = parse_weekly_structured(text)
             if not week_start or not days_data:
-                await msg.reply_text("❌ Не удалось разобрать расписание. Проверь формат.")
+                await send_personal_summary(
+                    context.bot, user,
+                    "⚠️ Не удалось разобрать #расписание. Проверь формат."
+                )
                 return
 
+            new_days = []
+            conflict_days = []
             for day in days_data:
                 target_date = week_start + timedelta(days=day['idx'])
                 existing = Schedule.query.filter_by(user_id=user.id, date=target_date).first()
                 if existing:
-                    conflict_days.append(target_date.strftime('%d.%m'))
-                    continue
-
-                if day['is_day_off']:
-                    s = Schedule(user_id=user.id, date=target_date,
-                                 is_day_off=True, status='approved',
-                                 plan_text=day.get('plan_text'))
+                    conflict_days.append((target_date, day, existing))
                 else:
-                    s = Schedule(user_id=user.id, date=target_date,
-                                 planned_start=day['start'], planned_end=day['end'],
-                                 is_day_off=False, status='approved',
-                                 plan_text=day.get('plan_text'))
-                db.session.add(s)
-                saved_count += 1
-            db.session.commit()
+                    new_days.append((target_date, day))
 
-            # Отправляем в личку
-            personal_text = (
-                f"📋 <b>Расписание на неделю сохранено</b>\n"
-                f"📅 Неделя с {week_start.strftime('%d.%m.%Y')}\n"
-                f"✅ Сохранено дней: {saved_count}\n"
+            if not conflict_days:
+                for target_date, day in new_days:
+                    if day['is_day_off']:
+                        s = Schedule(user_id=user.id, date=target_date,
+                                     is_day_off=True, status='approved',
+                                     plan_text=day.get('plan_text'))
+                    else:
+                        s = Schedule(user_id=user.id, date=target_date,
+                                     planned_start=day['start'], planned_end=day['end'],
+                                     is_day_off=False, status='approved',
+                                     plan_text=day.get('plan_text'))
+                    db.session.add(s)
+                db.session.commit()
+
+                personal_text = (
+                    f"📋 <b>Расписание на неделю сохранено</b>\n"
+                    f"📅 Неделя с {week_start.strftime('%d.%m.%Y')}\n"
+                    f"✅ Сохранено дней: {len(new_days)}\n\n"
+                    f"Открой «📅 Моё расписание» для просмотра."
+                )
+                await send_personal_summary(context.bot, user, personal_text)
+                return
+
+            context.user_data['pending_week_plan'] = {
+                'user_id': user.id,
+                'week_start': week_start.isoformat(),
+                'new_days': [
+                    {'date': d.isoformat(), 'data': _ser_day(day)}
+                    for d, day in new_days
+                ],
+                'conflict_days': [
+                    {'date': d.isoformat(), 'data': _ser_day(day)}
+                    for d, day, _ in conflict_days
+                ],
+            }
+
+            conflict_lines = []
+            for d, day, ex in conflict_days:
+                if ex.is_day_off:
+                    line = f"• {d.strftime('%d.%m')} — уже есть 🏖 выходной"
+                elif ex.planned_start and ex.planned_end:
+                    st = ex.planned_start.strftime('%H:%M')
+                    en = ex.planned_end.strftime('%H:%M')
+                    line = f"• {d.strftime('%d.%m')} — уже есть 📋 {st}–{en}"
+                else:
+                    line = f"• {d.strftime('%d.%m')} — уже есть запись"
+                conflict_lines.append(line)
+            conflict_list = "\n".join(conflict_lines)
+
+            new_lines = []
+            for d, day in new_days:
+                if day['is_day_off']:
+                    line = f"• {d.strftime('%d.%m')} — 🏖 выходной"
+                else:
+                    st = day['start'].strftime('%H:%M')
+                    en = day['end'].strftime('%H:%M')
+                    line = f"• {d.strftime('%d.%m')} — 📋 {st}–{en}"
+                new_lines.append(line)
+            new_list = "\n".join(new_lines) or "(нет новых дней)"
+
+            kb = InlineKeyboardMarkup([
+                [InlineKeyboardButton("✏️ Заменить конфликты", callback_data="wplan_replace")],
+                [InlineKeyboardButton("⏭ Только новые дни", callback_data="wplan_skip")],
+                [InlineKeyboardButton("❌ Отменить всё", callback_data="wplan_cancel")],
+            ])
+
+            await send_personal_summary(
+                context.bot, user,
+                f"⚠️ <b>На некоторые дни уже есть план:</b>\n\n{conflict_list}\n\n"
+                f"<b>Новые дни:</b>\n{new_list}\n\n"
+                f"Что сделать?",
+                reply_markup=kb
             )
-            if conflict_days:
-                personal_text += f"⚠️ Пропущены (уже заняты): {', '.join(conflict_days)}\n"
-            personal_text += "\nОткрой «📋 Расписание недели» для просмотра."
+            return
 
-            sent = await send_personal_summary(context.bot, user, personal_text)
-            if not sent:
-                await msg.reply_text(
-                    f"✅ {esc(user.full_name)}, расписание сохранено ({saved_count} дней).\n"
-                    f"⚠️ Не могу написать в личку — привяжи бота через /start."
-                )
-            else:
-                # В группе коротко
-                await msg.reply_text(
-                    f"✅ Расписание {esc(user.full_name)} сохранено ({saved_count} дней). "
-                    f"Подробности в личке."
-                )
-
-        elif '#дейли' in text:
+        # ---------------- #дейли ----------------
+        if '#дейли' in text:
             daily = parse_daily_structured(text)
             if not daily:
-                await msg.reply_text("❌ Не удалось разобрать дейли. Проверь формат.")
+                await send_personal_summary(
+                    context.bot, user,
+                    "⚠️ Не удалось разобрать #дейли. Проверь формат."
+                )
                 return
 
             existing = Attendance.query.filter_by(user_id=user.id, date=daily['date']).first()
-            if existing:
-                await msg.reply_text(
-                    f"⚠️ На {daily['date'].strftime('%d.%m.%Y')} у {esc(user.full_name)} уже есть отметка."
-                )
-                return
-
             schedule = Schedule.query.filter_by(
                 user_id=user.id, date=daily['date'], status='approved'
             ).first()
             early_start = 0
             if schedule and schedule.planned_start and not schedule.is_day_off:
                 early_start = time_to_minutes(daily['start']) - time_to_minutes(schedule.planned_start)
-
             status = 'confirmed' if daily['date'] == date.today() else 'pending'
+
+            if existing:
+                context.user_data['pending_daily'] = {
+                    'user_id': user.id,
+                    'date': daily['date'].isoformat(),
+                    'start': daily['start'].strftime('%H:%M'),
+                    'end': daily['end'].strftime('%H:%M'),
+                    'eff': daily['eff'],
+                    'plan_text': daily.get('plan_text'),
+                    'early_start': early_start,
+                    'status': status,
+                }
+
+                existing_text = (
+                    f"⏰ {existing.actual_start.strftime('%H:%M')}–{existing.actual_end.strftime('%H:%M')}\n"
+                    f"📈 e%: {int(existing.efficiency * 100)}"
+                )
+                new_text = (
+                    f"⏰ {daily['start'].strftime('%H:%M')}–{daily['end'].strftime('%H:%M')}, "
+                    f"e% {daily['eff']}"
+                )
+
+                if user.telegram_chat_id:
+                    kb = InlineKeyboardMarkup([
+                        [InlineKeyboardButton("✏️ Заменить", callback_data="daily_replace")],
+                        [InlineKeyboardButton("❌ Оставить старое", callback_data="daily_keep")],
+                    ])
+                    try:
+                        await context.bot.send_message(
+                            chat_id=user.telegram_chat_id,
+                            text=(
+                                f"⚠️ На <b>{daily['date'].strftime('%d.%m.%Y')}</b> "
+                                f"у тебя уже есть отметка из #дейли:\n\n"
+                                f"{existing_text}\n\n"
+                                f"Новая из сообщения:\n<b>{new_text}</b>\n\n"
+                                f"Заменить запись?"
+                            ),
+                            parse_mode='HTML',
+                            reply_markup=kb
+                        )
+                    except Exception as e:
+                        logger.error(f"Не отправить кнопки дейли: {e}")
+                return
 
             att = Attendance(
                 user_id=user.id, date=daily['date'],
@@ -768,27 +995,127 @@ async def handle_structured_message(update: Update, context: ContextTypes.DEFAUL
             db.session.add(att)
             db.session.commit()
 
-            # Отправляем в личку
             personal_text = (
                 f"📊 <b>Дейли за {daily['date'].strftime('%d.%m.%Y')} сохранён</b>\n"
                 f"⏰ Время: {daily['start'].strftime('%H:%M')}–{daily['end'].strftime('%H:%M')}\n"
                 f"📈 Эффективность: {daily['eff']}%\n"
-                f"📌 Статус: {'✅ подтверждено' if status == 'confirmed' else '⏳ ожидает подтверждения'}\n"
+                f"📌 Статус: {'✅ подтверждено' if status == 'confirmed' else '⏳ ожидает'}\n"
             )
             if daily.get('plan_text'):
-                personal_text += f"\n<b>Задачи:</b>\n{esc(daily['plan_text'][:500])}\n"
-            personal_text += "\nПроверь, всё ли верно. Если нужно — исправь через «⏰ Фактическое время»."
+                personal_text += f"\n<b>Что сделал:</b>\n{esc(daily['plan_text'][:800])}\n"
+            await send_personal_summary(context.bot, user, personal_text)
+            return
 
-            sent = await send_personal_summary(context.bot, user, personal_text)
-            if not sent:
-                await msg.reply_text(
-                    f"✅ {esc(user.full_name)}, дейли сохранён.\n"
-                    f"⚠️ Не могу написать в личку — привяжи бота через /start."
-                )
+
+# ================== CALLBACK: конфликт #расписание ==================
+async def weekly_plan_conflict_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    data = context.user_data.get('pending_week_plan')
+    if not data:
+        await query.edit_message_text("❌ Данные устарели, пришли #расписание заново.")
+        return
+
+    action = query.data
+    user_id = data['user_id']
+
+    if action == "wplan_cancel":
+        context.user_data.pop('pending_week_plan', None)
+        await query.edit_message_text("Отменено. Ничего не сохранено.")
+        return
+
+    with app.app_context():
+        user = User.query.get(user_id)
+        if not user:
+            context.user_data.pop('pending_week_plan', None)
+            await query.edit_message_text("❌ Пользователь не найден.")
+            return
+
+        saved_new = 0
+        for item in data['new_days']:
+            d = datetime.strptime(item['date'], '%Y-%m-%d').date()
+            day = item['data']
+            if day['is_day_off']:
+                s = Schedule(user_id=user.id, date=d, is_day_off=True,
+                             status='approved', plan_text=day.get('plan_text'))
             else:
-                await msg.reply_text(
-                    f"✅ Дейли {esc(user.full_name)} сохранён. Подробности в личке."
-                )
+                s = Schedule(user_id=user.id, date=d,
+                             planned_start=parse_time_string(day['start']),
+                             planned_end=parse_time_string(day['end']),
+                             is_day_off=False, status='approved',
+                             plan_text=day.get('plan_text'))
+            db.session.add(s)
+            saved_new += 1
+
+        replaced = 0
+        if action == "wplan_replace":
+            for item in data['conflict_days']:
+                d = datetime.strptime(item['date'], '%Y-%m-%d').date()
+                day = item['data']
+                existing = Schedule.query.filter_by(user_id=user.id, date=d).first()
+                if not existing:
+                    continue
+                if day['is_day_off']:
+                    existing.is_day_off = True
+                    existing.planned_start = None
+                    existing.planned_end = None
+                    existing.plan_text = day.get('plan_text')
+                    existing.status = 'approved'
+                else:
+                    existing.is_day_off = False
+                    existing.planned_start = parse_time_string(day['start'])
+                    existing.planned_end = parse_time_string(day['end'])
+                    existing.plan_text = day.get('plan_text')
+                    existing.status = 'approved'
+                replaced += 1
+
+        db.session.commit()
+
+    context.user_data.pop('pending_week_plan', None)
+    if action == "wplan_replace":
+        await query.edit_message_text(
+            f"✅ Сохранено новых: {saved_new}\n♻️ Заменено конфликтов: {replaced}"
+        )
+    else:
+        await query.edit_message_text(
+            f"✅ Сохранено новых: {saved_new}\n⏭ Конфликты пропущены."
+        )
+
+
+async def daily_conflict_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    data = context.user_data.get('pending_daily')
+    if not data:
+        await query.edit_message_text("❌ Данные устарели. Пришли #дейли заново.")
+        return
+
+    if query.data == "daily_keep":
+        context.user_data.pop('pending_daily', None)
+        await query.edit_message_text("Оставлено старое значение.")
+        return
+
+    if query.data == "daily_replace":
+        with app.app_context():
+            d = datetime.strptime(data['date'], '%Y-%m-%d').date()
+            existing = Attendance.query.filter_by(
+                user_id=data['user_id'], date=d
+            ).first()
+            if not existing:
+                context.user_data.pop('pending_daily', None)
+                await query.edit_message_text("❌ Запись уже удалена, повтори #дейли.")
+                return
+            existing.actual_start = parse_time_string(data['start'])
+            existing.actual_end = parse_time_string(data['end'])
+            existing.efficiency = data['eff'] / 100
+            existing.early_start = data['early_start']
+            existing.note = data.get('plan_text')
+            existing.status = data['status']
+            db.session.commit()
+        context.user_data.pop('pending_daily', None)
+        await query.edit_message_text(
+            f"✅ Заменено на {data['start']}–{data['end']}, e% {data['eff']}"
+        )
 
 
 # ================== СТАРТ / РЕГИСТРАЦИЯ ==================
@@ -803,7 +1130,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 reply_markup=main_menu_keyboard()
             )
             return
-
     context.user_data['state'] = 'ask_email'
     await update.message.reply_text(
         "👋 Привет! Я — бот WorkTracker.\n\n"
@@ -822,7 +1148,6 @@ async def receive_email(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=main_menu_keyboard()
         )
         return
-
     chat_id = update.effective_chat.id
     tg_user = update.effective_user
 
@@ -835,27 +1160,23 @@ async def receive_email(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 reply_markup=main_menu_keyboard()
             )
             return
-
         user = find_user_by_email(text)
         if not user:
             await update.message.reply_text(
                 "❌ Email не найден.\nПроверь написание или обратись к администратору."
             )
             return
-
         if user.telegram_chat_id and user.telegram_chat_id != str(chat_id):
             await update.message.reply_text(
                 "⚠️ Этот email уже привязан к другому Telegram-аккаунту.\n\n"
                 "Обратись к администратору, если это ошибка."
             )
             return
-
         user.telegram_chat_id = str(chat_id)
         if tg_user.username:
             user.telegram_id = f"@{tg_user.username}"
         elif not user.telegram_id:
             user.telegram_id = tg_user.first_name or f"id{chat_id}"
-
         db.session.commit()
 
     clear_state(context)
@@ -865,7 +1186,7 @@ async def receive_email(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
-# ================== ПРОФИЛЬ / НЕДЕЛЯ / КТО ==================
+# ================== ПРОСТЫЕ КОМАНДЫ ==================
 async def cmd_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     with app.app_context():
@@ -876,107 +1197,6 @@ async def cmd_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
         text = profile_text(user)
     await update.message.reply_text(text, parse_mode='HTML',
                                     reply_markup=main_menu_keyboard())
-
-
-async def cmd_week(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    chat_id = update.effective_chat.id
-    offset = context.user_data.get('week_offset', 0)
-    with app.app_context():
-        user = get_user_by_chat(chat_id)
-        if not user:
-            await update.message.reply_text("❌ Отправь /start и привяжи аккаунт.")
-            return
-        text = week_text(user, offset)
-
-    kb = InlineKeyboardMarkup([
-        [
-            InlineKeyboardButton("⬅️", callback_data="week_prev"),
-            InlineKeyboardButton("Текущая", callback_data="week_now"),
-            InlineKeyboardButton("➡️", callback_data="week_next"),
-        ]
-    ])
-    await update.message.reply_text(text, parse_mode='HTML', reply_markup=kb)
-
-
-async def week_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-
-    if query.data == "week_prev":
-        context.user_data['week_offset'] = context.user_data.get('week_offset', 0) - 1
-    elif query.data == "week_next":
-        context.user_data['week_offset'] = context.user_data.get('week_offset', 0) + 1
-    elif query.data == "week_now":
-        context.user_data['week_offset'] = 0
-
-    chat_id = query.message.chat_id
-    offset = context.user_data.get('week_offset', 0)
-
-    with app.app_context():
-        user = get_user_by_chat(chat_id)
-        if not user:
-            await query.edit_message_text("❌ Аккаунт не привязан.")
-            return
-        text = week_text(user, offset)
-
-    kb = InlineKeyboardMarkup([
-        [
-            InlineKeyboardButton("⬅️", callback_data="week_prev"),
-            InlineKeyboardButton("Текущая", callback_data="week_now"),
-            InlineKeyboardButton("➡️", callback_data="week_next"),
-        ]
-    ])
-    await query.edit_message_text(text, parse_mode='HTML', reply_markup=kb)
-
-
-async def cmd_all_week(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    offset = context.user_data.get('all_week_offset', 0)
-    with app.app_context():
-        buf = generate_all_week_image(offset)
-
-    today = date.today()
-    start_of_week = today - timedelta(days=today.weekday()) + timedelta(weeks=offset)
-
-    await update.message.reply_photo(
-        photo=buf,
-        caption=f"👥 <b>Расписание всех сотрудников</b>\nНеделя с {start_of_week.strftime('%d.%m.%Y')}",
-        parse_mode='HTML',
-        reply_markup=main_menu_keyboard()
-    )
-
-    kb = InlineKeyboardMarkup([
-        [
-            InlineKeyboardButton("⬅️", callback_data="allweek_prev"),
-            InlineKeyboardButton("Текущая", callback_data="allweek_now"),
-            InlineKeyboardButton("➡️", callback_data="allweek_next"),
-        ]
-    ])
-    await update.message.reply_text("Навигация по неделям:", reply_markup=kb)
-
-
-async def all_week_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-
-    if query.data == "allweek_prev":
-        context.user_data['all_week_offset'] = context.user_data.get('all_week_offset', 0) - 1
-    elif query.data == "allweek_next":
-        context.user_data['all_week_offset'] = context.user_data.get('all_week_offset', 0) + 1
-    elif query.data == "allweek_now":
-        context.user_data['all_week_offset'] = 0
-
-    offset = context.user_data.get('all_week_offset', 0)
-    with app.app_context():
-        buf = generate_all_week_image(offset)
-
-    today = date.today()
-    start_of_week = today - timedelta(days=today.weekday()) + timedelta(weeks=offset)
-
-    await query.message.reply_photo(
-        photo=buf,
-        caption=f"👥 <b>Расписание всех сотрудников</b>\nНеделя с {start_of_week.strftime('%d.%m.%Y')}",
-        parse_mode='HTML'
-    )
 
 
 async def cmd_who(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -998,6 +1218,1095 @@ async def cmd_my_absences(update: Update, context: ContextTypes.DEFAULT_TYPE):
                                     reply_markup=main_menu_keyboard())
 
 
+async def cmd_all_week(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        offset = context.user_data.get('all_week_offset', 0)
+        with app.app_context():
+            buf = generate_all_week_image(offset)
+        today = date.today()
+        start_of_week = today - timedelta(days=today.weekday()) + timedelta(weeks=offset)
+        await update.message.reply_photo(
+            photo=buf,
+            caption=f"👥 <b>Расписание всех сотрудников</b>\nНеделя с {start_of_week.strftime('%d.%m.%Y')}",
+            parse_mode='HTML',
+            reply_markup=main_menu_keyboard()
+        )
+        kb = InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton("⬅️", callback_data="allweek_prev"),
+                InlineKeyboardButton("Текущая", callback_data="allweek_now"),
+                InlineKeyboardButton("➡️", callback_data="allweek_next"),
+            ]
+        ])
+        await update.message.reply_text("Навигация по неделям:", reply_markup=kb)
+    except Exception as e:
+        logger.exception(f"Ошибка в cmd_all_week: {e}")
+        await update.message.reply_text("⚠️ Не удалось сформировать картинку.",
+                                        reply_markup=main_menu_keyboard())
+
+
+async def all_week_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    try:
+        if query.data == "allweek_prev":
+            context.user_data['all_week_offset'] = context.user_data.get('all_week_offset', 0) - 1
+        elif query.data == "allweek_next":
+            context.user_data['all_week_offset'] = context.user_data.get('all_week_offset', 0) + 1
+        elif query.data == "allweek_now":
+            context.user_data['all_week_offset'] = 0
+        offset = context.user_data.get('all_week_offset', 0)
+        with app.app_context():
+            buf = generate_all_week_image(offset)
+        today = date.today()
+        start_of_week = today - timedelta(days=today.weekday()) + timedelta(weeks=offset)
+        await query.message.reply_photo(
+            photo=buf,
+            caption=f"👥 <b>Расписание всех сотрудников</b>\nНеделя с {start_of_week.strftime('%d.%m.%Y')}",
+            parse_mode='HTML'
+        )
+    except Exception as e:
+        logger.exception(f"Ошибка в all_week_callback: {e}")
+        await query.message.reply_text("⚠️ Ошибка формирования картинки.")
+
+
+# ================== «МОЁ РАСПИСАНИЕ» ==================
+def _schedule_week_view_data(user, week_start, week_offset):
+    end_of_week = week_start + timedelta(days=6)
+    text = f"📅 <b>Моё расписание</b>\n"
+    text += f"{week_start.strftime('%d.%m')} – {end_of_week.strftime('%d.%m.%Y')}\n"
+    text += "━━━━━━━━━━━━━━━━━━━━\n\n"
+
+    for i in range(7):
+        d = week_start + timedelta(days=i)
+        sch = Schedule.query.filter_by(user_id=user.id, date=d).first()
+        att = Attendance.query.filter(
+            Attendance.user_id == user.id,
+            Attendance.date == d,
+            Attendance.status != 'rejected'
+        ).first()
+        if sch and sch.status == 'rejected':
+            sch = None
+
+        day_short = DAYS_RU_SHORT[i]
+        marker = " 🔸" if d == date.today() else ""
+        text += f"<b>{day_short} {d.strftime('%d.%m')}</b>{marker}\n"
+
+        if sch and sch.is_day_off:
+            text += "🏖 Выходной\n"
+        elif sch and sch.planned_start and sch.planned_end:
+            text += f"📋 План: {sch.planned_start.strftime('%H:%M')}–{sch.planned_end.strftime('%H:%M')}\n"
+        else:
+            text += "📋 План: —\n"
+
+        if att and att.actual_start and att.actual_end:
+            eff = int(att.efficiency * 100)
+            text += f"⏰ Факт: {att.actual_start.strftime('%H:%M')}–{att.actual_end.strftime('%H:%M')} • e% {eff}\n"
+
+        # Полный план (все задачи)
+        if sch and sch.plan_text:
+            for t in _task_lines(sch.plan_text):
+                text += f"   📝 {esc(t)}\n"
+
+        # Что сделал (полностью)
+        if att and att.note:
+            for t in _task_lines(att.note):
+                text += f"   ✅ {esc(t)}\n"
+
+        text += "\n"
+
+    text += "━━━━━━━━━━━━━━━━━━━━\n"
+    text += "👇 Нажми на день, чтобы изменить план."
+
+    kb = schedule_week_keyboard(week_start, user, week_offset)
+    rows = list(kb.inline_keyboard)
+    rows.append([InlineKeyboardButton("🖼 Показать картинкой", callback_data="mysch_image")])
+    kb = InlineKeyboardMarkup(rows)
+    return text, kb
+
+
+def _schedule_day_view_data(user, d):
+    sch = Schedule.query.filter_by(user_id=user.id, date=d).first()
+    att = Attendance.query.filter(
+        Attendance.user_id == user.id,
+        Attendance.date == d,
+        Attendance.status != 'rejected'
+    ).first()
+    if sch and sch.status == 'rejected':
+        sch = None
+
+    day_name = DAYS_RU_FULL[d.weekday()]
+    text = f"📅 <b>{day_name}, {d.strftime('%d.%m.%Y')}</b>\n"
+    text += "━━━━━━━━━━━━━━━━━━━━\n\n"
+
+    text += "<b>📋 План</b>\n"
+    if sch and sch.is_day_off:
+        text += "🏖 Выходной\n"
+    elif sch and sch.planned_start and sch.planned_end:
+        text += f"{sch.planned_start.strftime('%H:%M')} – {sch.planned_end.strftime('%H:%M')}\n"
+    else:
+        text += "<i>не заполнен</i>\n"
+
+    if sch and sch.plan_text:
+        text += "\n<b>📝 Задачи на день:</b>\n"
+        for t in _task_lines(sch.plan_text):
+            text += f"   • {esc(t)}\n"
+    elif sch:
+        text += "\n📝 <i>Задачи не указаны</i>\n"
+    text += "\n"
+
+    text += "<b>⏰ Факт</b>\n"
+    if att and att.actual_start and att.actual_end:
+        eff = int(att.efficiency * 100)
+        status = STATUS_RU.get(att.status, att.status)
+        text += f"{att.actual_start.strftime('%H:%M')} – {att.actual_end.strftime('%H:%M')}\n"
+        text += f"📈 Эффективность: <b>{eff}%</b>\n"
+        text += f"🎯 Статус: {status}\n"
+        if att.note:
+            text += "\n<b>✅ Что сделал:</b>\n"
+            for t in _task_lines(att.note):
+                text += f"   • {esc(t)}\n"
+    else:
+        text += "<i>нет данных</i>\n"
+
+    text += "\nЧто хочешь сделать?"
+    kb = schedule_day_keyboard(d, sch, att)
+    return text, kb
+
+
+async def cmd_my_schedule(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_id = update.effective_chat.id
+    with app.app_context():
+        user = get_user_by_chat(chat_id)
+        if not user:
+            await update.message.reply_text("❌ Отправь /start и привяжи аккаунт.")
+            return
+        offset = context.user_data.get('sched_week_offset', 0)
+        today = date.today()
+        week_start = today - timedelta(days=today.weekday()) + timedelta(weeks=offset)
+        text, kb = _schedule_week_view_data(user, week_start, offset)
+
+    msg = await update.message.reply_text(text, parse_mode='HTML', reply_markup=kb)
+    context.user_data['sched_day_msg_id'] = msg.message_id
+
+
+async def sched_week_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    data = query.data
+    chat_id = query.message.chat_id
+
+    if data == "sched_noop":
+        await query.answer()
+        return
+
+    try:
+        offset = int(data.replace("sched_week_", ""))
+    except ValueError:
+        await query.answer()
+        return
+
+    context.user_data['sched_week_offset'] = offset
+    today = date.today()
+    week_start = today - timedelta(days=today.weekday()) + timedelta(weeks=offset)
+
+    with app.app_context():
+        user = get_user_by_chat(chat_id)
+        if not user:
+            await query.answer("Аккаунт не привязан", show_alert=True)
+            return
+        text, kb = _schedule_week_view_data(user, week_start, offset)
+
+    await query.answer()
+    try:
+        await query.edit_message_text(text, parse_mode='HTML', reply_markup=kb)
+    except Exception:
+        try:
+            await query.message.delete()
+        except Exception:
+            pass
+        await query.message.chat.send_message(text, parse_mode='HTML', reply_markup=kb)
+
+
+async def sched_day_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    data = query.data
+    chat_id = query.message.chat_id
+    ds = data.replace("sched_day_", "")
+    try:
+        d = datetime.strptime(ds, '%Y-%m-%d').date()
+    except ValueError:
+        await query.answer()
+        return
+
+    with app.app_context():
+        user = get_user_by_chat(chat_id)
+        if not user:
+            await query.answer("Аккаунт не привязан", show_alert=True)
+            return
+        text, kb = _schedule_day_view_data(user, d)
+
+    await query.answer()
+    try:
+        await query.edit_message_text(text, parse_mode='HTML', reply_markup=kb)
+    except Exception:
+        try:
+            await query.message.delete()
+        except Exception:
+            pass
+        await query.message.chat.send_message(text, parse_mode='HTML', reply_markup=kb)
+
+
+async def _warn_before_edit(query, context, d, action):
+    chat_id = query.message.chat_id
+    with app.app_context():
+        user = get_user_by_chat(chat_id)
+        if not user:
+            await query.answer("Аккаунт не привязан", show_alert=True)
+            return
+        sch = Schedule.query.filter_by(user_id=user.id, date=d).first()
+        if sch and sch.status != 'rejected':
+            if sch.is_day_off:
+                current = "🏖 выходной"
+            elif sch.planned_start and sch.planned_end:
+                current = f"📋 {sch.planned_start.strftime('%H:%M')}–{sch.planned_end.strftime('%H:%M')}"
+            else:
+                current = "запись"
+            if sch.plan_text:
+                current += f"\n📝 {esc(_tasks_short(sch.plan_text, limit=200))}"
+        else:
+            current = "—"
+
+        context.user_data['pending_sched_edit'] = {
+            'action': action,
+            'date': d.isoformat(),
+            'user_id': user.id,
+        }
+
+        kb = InlineKeyboardMarkup([
+            [InlineKeyboardButton("✅ Продолжить", callback_data=f"sched_warn_yes_{action}")],
+            [InlineKeyboardButton("❌ Отмена", callback_data=f"sched_warn_no_{action}")],
+        ])
+
+    await query.answer()
+    msg = (
+        f"⚠️ На <b>{d.strftime('%d.%m.%Y')}</b> уже есть план:\n\n{current}\n\nИзменить?"
+    )
+    try:
+        await query.edit_message_text(msg, parse_mode='HTML', reply_markup=kb)
+    except Exception:
+        try:
+            await query.message.delete()
+        except Exception:
+            pass
+        await query.message.chat.send_message(msg, parse_mode='HTML', reply_markup=kb)
+
+
+async def sched_warn_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    data = query.data
+    m = re.match(r'^sched_warn_(yes|no)_(\w+)$', data)
+    if not m:
+        await query.answer()
+        return
+    decision, action = m.group(1), m.group(2)
+    pending = context.user_data.get('pending_sched_edit')
+    if not pending:
+        await query.answer("Данные устарели", show_alert=True)
+        return
+
+    d = datetime.strptime(pending['date'], '%Y-%m-%d').date()
+    ds = pending['date']
+
+    if decision == 'no':
+        context.user_data.pop('pending_sched_edit', None)
+        chat_id = query.message.chat_id
+        with app.app_context():
+            user = get_user_by_chat(chat_id)
+            if user:
+                text, kb = _schedule_day_view_data(user, d)
+            else:
+                text, kb = "❌ Аккаунт не привязан", None
+        await query.answer("Отменено")
+        try:
+            await query.edit_message_text(text, parse_mode='HTML', reply_markup=kb)
+        except Exception:
+            try:
+                await query.message.delete()
+            except Exception:
+                pass
+            await query.message.chat.send_message(text, parse_mode='HTML', reply_markup=kb)
+        return
+
+    context.user_data.pop('pending_sched_edit', None)
+    await query.answer("Продолжаем")
+
+    if action == 'time':
+        context.user_data['sched_edit_date'] = ds
+        context.user_data['state'] = 'sched_edit_start'
+        msg = (
+            f"🕐 Редактирование <b>{d.strftime('%d.%m.%Y')}</b>\n\n"
+            f"Введи <b>время прихода</b> в формате <code>ЧЧ:ММ</code>\n"
+            f"Например: <code>10:00</code>"
+        )
+        try:
+            await query.edit_message_text(msg, parse_mode='HTML')
+        except Exception:
+            try:
+                await query.message.delete()
+            except Exception:
+                pass
+            await query.message.chat.send_message(msg, parse_mode='HTML')
+        await query.message.chat.send_message("Введи время прихода 👇", reply_markup=cancel_keyboard())
+
+    elif action == 'tasks':
+        # Открываем меню действий с задачами
+        await show_tasks_menu(query, context, d, ds)
+
+    elif action == 'dayoff':
+        chat_id = query.message.chat_id
+        with app.app_context():
+            user = get_user_by_chat(chat_id)
+            if not user:
+                return
+            sch = Schedule.query.filter_by(user_id=user.id, date=d).first()
+            if sch:
+                sch.is_day_off = True
+                sch.planned_start = None
+                sch.planned_end = None
+                sch.status = 'approved'
+            else:
+                sch = Schedule(user_id=user.id, date=d, is_day_off=True, status='approved')
+                db.session.add(sch)
+            db.session.commit()
+            text, kb = _schedule_day_view_data(user, d)
+        try:
+            await query.edit_message_text(text, parse_mode='HTML', reply_markup=kb)
+        except Exception:
+            try:
+                await query.message.delete()
+            except Exception:
+                pass
+            await query.message.chat.send_message(text, parse_mode='HTML', reply_markup=kb)
+
+    elif action == 'note':
+        context.user_data['sched_edit_date'] = ds
+        context.user_data['sched_edit_kind'] = 'note'
+        context.user_data['state'] = 'sched_edit_note'
+        msg = (
+            f"✅ Что сделал <b>{d.strftime('%d.%m.%Y')}</b>\n\n"
+            f"Отправь список — каждая строка с новой, начиная с «-».\n\n"
+            f"Пример:\n"
+            f"<code>- Доработал парсер\n"
+            f"- Провёл встречу</code>\n\n"
+            f"Чтобы очистить — отправь <code>-</code>"
+        )
+        try:
+            await query.edit_message_text(msg, parse_mode='HTML')
+        except Exception:
+            try:
+                await query.message.delete()
+            except Exception:
+                pass
+            await query.message.chat.send_message(msg, parse_mode='HTML')
+        await query.message.chat.send_message("Жду список 👇", reply_markup=cancel_keyboard())
+
+
+async def show_tasks_menu(query, context, d, ds):
+    """Показывает существующие задачи и предлагает действия."""
+    chat_id = query.message.chat_id
+    with app.app_context():
+        user = get_user_by_chat(chat_id)
+        if not user:
+            return
+        sch = Schedule.query.filter_by(user_id=user.id, date=d).first()
+        tasks = _task_lines(sch.plan_text) if sch and sch.plan_text else []
+
+    if tasks:
+        text = f"📝 <b>Задачи на {d.strftime('%d.%m.%Y')}</b>\n\n"
+        for i, t in enumerate(tasks, 1):
+            text += f"{i}. {esc(t)}\n"
+        text += "\nЧто сделать?"
+
+        kb = InlineKeyboardMarkup([
+            [InlineKeyboardButton("➕ Добавить задачи", callback_data="sched_tasks_add")],
+            [InlineKeyboardButton("✏️ Переписать полностью", callback_data="sched_tasks_replace")],
+            [InlineKeyboardButton("🗑 Очистить всё", callback_data="sched_tasks_clear")],
+            [InlineKeyboardButton("⬅️ Назад", callback_data=f"sched_day_{ds}")],
+        ])
+        context.user_data['sched_edit_date'] = ds
+    else:
+        text = (
+            f"📝 <b>Задачи на {d.strftime('%d.%m.%Y')}</b>\n\n"
+            f"Пока задач нет. Отправь список — каждая строка с новой, начиная с «-».\n\n"
+            f"Пример:\n"
+            f"<code>- Созвон с клиентом\n"
+            f"- Доделать отчёт</code>"
+        )
+        kb = InlineKeyboardMarkup([
+            [InlineKeyboardButton("⬅️ Назад", callback_data=f"sched_day_{ds}")],
+        ])
+        context.user_data['sched_edit_date'] = ds
+        context.user_data['sched_tasks_mode'] = 'replace'
+        context.user_data['state'] = 'sched_edit_tasks'
+
+    try:
+        await query.edit_message_text(text, parse_mode='HTML', reply_markup=kb)
+    except Exception:
+        try:
+            await query.message.delete()
+        except Exception:
+            pass
+        await query.message.chat.send_message(text, parse_mode='HTML', reply_markup=kb)
+
+    if not tasks:
+        await query.message.chat.send_message("Жду список задач 👇", reply_markup=cancel_keyboard())
+
+
+async def sched_tasks_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """«Задачи на день». Если есть — показываем меню; если нет — сразу вводим."""
+    query = update.callback_query
+    ds = query.data.replace("sched_tasks_", "")
+    try:
+        d = datetime.strptime(ds, '%Y-%m-%d').date()
+    except ValueError:
+        await query.answer()
+        return
+
+    await query.answer()
+    await show_tasks_menu(query, context, d, ds)
+
+
+async def sched_tasks_action_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обработка «добавить / переписать / очистить»."""
+    query = update.callback_query
+    data = query.data
+    ds = context.user_data.get('sched_edit_date')
+    if not ds:
+        await query.answer("Сессия устарела", show_alert=True)
+        return
+    d = datetime.strptime(ds, '%Y-%m-%d').date()
+    chat_id = query.message.chat_id
+    await query.answer()
+
+    if data == "sched_tasks_clear":
+        with app.app_context():
+            user = get_user_by_chat(chat_id)
+            if not user:
+                return
+            sch = Schedule.query.filter_by(user_id=user.id, date=d).first()
+            if sch:
+                sch.plan_text = None
+                db.session.commit()
+            text, kb = _schedule_day_view_data(user, d)
+        try:
+            await query.edit_message_text("🗑 Задачи очищены.\n\n" + text,
+                                          parse_mode='HTML', reply_markup=kb)
+        except Exception:
+            try:
+                await query.message.delete()
+            except Exception:
+                pass
+            await query.message.chat.send_message(text, parse_mode='HTML', reply_markup=kb)
+        return
+
+    if data == "sched_tasks_add":
+        context.user_data['sched_tasks_mode'] = 'add'
+        context.user_data['state'] = 'sched_edit_tasks'
+        msg = (
+            f"➕ <b>Добавить задачи на {d.strftime('%d.%m.%Y')}</b>\n\n"
+            f"Отправь новые строки — каждая с новой, начиная с «-».\n"
+            f"Они добавятся к существующим."
+        )
+    elif data == "sched_tasks_replace":
+        context.user_data['sched_tasks_mode'] = 'replace'
+        context.user_data['state'] = 'sched_edit_tasks'
+        msg = (
+            f"✏️ <b>Переписать задачи на {d.strftime('%d.%m.%Y')}</b>\n\n"
+            f"Отправь новый список — каждая строка с новой, начиная с «-».\n"
+            f"Старые задачи будут удалены."
+        )
+    else:
+        return
+
+    try:
+        await query.edit_message_text(msg, parse_mode='HTML')
+    except Exception:
+        try:
+            await query.message.delete()
+        except Exception:
+            pass
+        await query.message.chat.send_message(msg, parse_mode='HTML')
+    await query.message.chat.send_message("Жду список 👇", reply_markup=cancel_keyboard())
+
+
+async def sched_dayoff_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    ds = query.data.replace("sched_dayoff_", "")
+    try:
+        d = datetime.strptime(ds, '%Y-%m-%d').date()
+    except ValueError:
+        await query.answer()
+        return
+
+    chat_id = query.message.chat_id
+    with app.app_context():
+        user = get_user_by_chat(chat_id)
+        if not user:
+            await query.answer("Аккаунт не привязан", show_alert=True)
+            return
+        sch = Schedule.query.filter_by(user_id=user.id, date=d).first()
+
+    if sch and sch.status != 'rejected' and not sch.is_day_off:
+        await _warn_before_edit(query, context, d, 'dayoff')
+        return
+
+    with app.app_context():
+        sch2 = Schedule.query.filter_by(user_id=user.id, date=d).first()
+        if sch2:
+            sch2.is_day_off = True
+            sch2.planned_start = None
+            sch2.planned_end = None
+            sch2.status = 'approved'
+        else:
+            sch2 = Schedule(user_id=user.id, date=d, is_day_off=True, status='approved')
+            db.session.add(sch2)
+        db.session.commit()
+        text, kb = _schedule_day_view_data(user, d)
+    await query.answer("🏖 Отмечено выходным")
+    try:
+        await query.edit_message_text(text, parse_mode='HTML', reply_markup=kb)
+    except Exception:
+        try:
+            await query.message.delete()
+        except Exception:
+            pass
+        await query.message.chat.send_message(text, parse_mode='HTML', reply_markup=kb)
+
+
+async def sched_clear_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    ds = query.data.replace("sched_clear_", "")
+    try:
+        d = datetime.strptime(ds, '%Y-%m-%d').date()
+    except ValueError:
+        await query.answer()
+        return
+    chat_id = query.message.chat_id
+
+    with app.app_context():
+        user = get_user_by_chat(chat_id)
+        if not user:
+            await query.answer("Нет привязки", show_alert=True)
+            return
+        Schedule.query.filter_by(user_id=user.id, date=d).delete()
+        db.session.commit()
+        text, kb = _schedule_day_view_data(user, d)
+
+    await query.answer("🗑 День очищен")
+    try:
+        await query.edit_message_text(text, parse_mode='HTML', reply_markup=kb)
+    except Exception:
+        try:
+            await query.message.delete()
+        except Exception:
+            pass
+        await query.message.chat.send_message(text, parse_mode='HTML', reply_markup=kb)
+
+
+async def sched_time_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    ds = query.data.replace("sched_time_", "")
+    try:
+        d = datetime.strptime(ds, '%Y-%m-%d').date()
+    except ValueError:
+        await query.answer()
+        return
+
+    chat_id = query.message.chat_id
+    with app.app_context():
+        user = get_user_by_chat(chat_id)
+        if not user:
+            await query.answer("Аккаунт не привязан", show_alert=True)
+            return
+        sch = Schedule.query.filter_by(user_id=user.id, date=d).first()
+
+    if sch and sch.status != 'rejected':
+        await _warn_before_edit(query, context, d, 'time')
+        return
+
+    context.user_data['sched_edit_date'] = ds
+    context.user_data['state'] = 'sched_edit_start'
+    await query.answer()
+    msg = (
+        f"🕐 Редактирование <b>{d.strftime('%d.%m.%Y')}</b>\n\n"
+        f"Введи <b>время прихода</b> в формате <code>ЧЧ:ММ</code>\n"
+        f"Например: <code>10:00</code>"
+    )
+    try:
+        await query.edit_message_text(msg, parse_mode='HTML')
+    except Exception:
+        try:
+            await query.message.delete()
+        except Exception:
+            pass
+        await query.message.chat.send_message(msg, parse_mode='HTML')
+    await query.message.chat.send_message("Введи время прихода 👇", reply_markup=cancel_keyboard())
+
+
+async def sched_note_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Редактирование «что сделал» (Attendance.note)."""
+    query = update.callback_query
+    ds = query.data.replace("sched_note_", "")
+    try:
+        d = datetime.strptime(ds, '%Y-%m-%d').date()
+    except ValueError:
+        await query.answer()
+        return
+
+    chat_id = query.message.chat_id
+    with app.app_context():
+        user = get_user_by_chat(chat_id)
+        if not user:
+            await query.answer("Аккаунт не привязан", show_alert=True)
+            return
+        att = Attendance.query.filter_by(user_id=user.id, date=d).first()
+        if not att:
+            await query.answer("Нет записи факта на этот день.", show_alert=True)
+            return
+        note_lines = _task_lines(att.note)
+
+    if note_lines:
+        text = f"✅ <b>Что сделал — {d.strftime('%d.%m.%Y')}</b>\n\n"
+        for i, t in enumerate(note_lines, 1):
+            text += f"{i}. {esc(t)}\n"
+        text += "\nЧто сделать?"
+        kb = InlineKeyboardMarkup([
+            [InlineKeyboardButton("➕ Добавить", callback_data="sched_note_add")],
+            [InlineKeyboardButton("✏️ Переписать", callback_data="sched_note_replace")],
+            [InlineKeyboardButton("🗑 Очистить", callback_data="sched_note_clear")],
+            [InlineKeyboardButton("⬅️ Назад", callback_data=f"sched_day_{ds}")],
+        ])
+        context.user_data['sched_edit_date'] = ds
+        try:
+            await query.edit_message_text(text, parse_mode='HTML', reply_markup=kb)
+        except Exception:
+            try:
+                await query.message.delete()
+            except Exception:
+                pass
+            await query.message.chat.send_message(text, parse_mode='HTML', reply_markup=kb)
+        await query.answer()
+        return
+
+    context.user_data['sched_edit_date'] = ds
+    context.user_data['sched_edit_kind'] = 'note'
+    context.user_data['sched_tasks_mode'] = 'replace'
+    context.user_data['state'] = 'sched_edit_note'
+    await query.answer()
+    msg = (
+        f"✅ Что сделал <b>{d.strftime('%d.%m.%Y')}</b>\n\n"
+        f"Отправь список — каждая строка с новой, начиная с «-»."
+    )
+    try:
+        await query.edit_message_text(msg, parse_mode='HTML')
+    except Exception:
+        try:
+            await query.message.delete()
+        except Exception:
+            pass
+        await query.message.chat.send_message(msg, parse_mode='HTML')
+    await query.message.chat.send_message("Жду список 👇", reply_markup=cancel_keyboard())
+
+
+async def sched_note_action_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    data = query.data
+    ds = context.user_data.get('sched_edit_date')
+    if not ds:
+        await query.answer("Сессия устарела", show_alert=True)
+        return
+    d = datetime.strptime(ds, '%Y-%m-%d').date()
+    chat_id = query.message.chat_id
+    await query.answer()
+
+    if data == "sched_note_clear":
+        with app.app_context():
+            user = get_user_by_chat(chat_id)
+            if not user:
+                return
+            att = Attendance.query.filter_by(user_id=user.id, date=d).first()
+            if att:
+                att.note = None
+                db.session.commit()
+            text, kb = _schedule_day_view_data(user, d)
+        try:
+            await query.edit_message_text(text, parse_mode='HTML', reply_markup=kb)
+        except Exception:
+            try:
+                await query.message.delete()
+            except Exception:
+                pass
+            await query.message.chat.send_message(text, parse_mode='HTML', reply_markup=kb)
+        return
+
+    if data == "sched_note_add":
+        context.user_data['sched_edit_kind'] = 'note'
+        context.user_data['sched_tasks_mode'] = 'add'
+        context.user_data['state'] = 'sched_edit_note'
+        msg = f"➕ <b>Добавить в «что сделал» за {d.strftime('%d.%m.%Y')}</b>\n\nОтправь новые строки с «-»."
+    elif data == "sched_note_replace":
+        context.user_data['sched_edit_kind'] = 'note'
+        context.user_data['sched_tasks_mode'] = 'replace'
+        context.user_data['state'] = 'sched_edit_note'
+        msg = f"✏️ <b>Переписать «что сделал» за {d.strftime('%d.%m.%Y')}</b>\n\nОтправь новый список с «-»."
+    else:
+        return
+
+    try:
+        await query.edit_message_text(msg, parse_mode='HTML')
+    except Exception:
+        try:
+            await query.message.delete()
+        except Exception:
+            pass
+        await query.message.chat.send_message(msg, parse_mode='HTML')
+    await query.message.chat.send_message("Жду список 👇", reply_markup=cancel_keyboard())
+
+
+async def mysch_view_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    chat_id = query.message.chat_id
+
+    with app.app_context():
+        user = get_user_by_chat(chat_id)
+        if not user:
+            try:
+                await query.edit_message_text("❌ Аккаунт не привязан.")
+            except Exception:
+                pass
+            return
+        offset = context.user_data.get('sched_week_offset', 0)
+        today = date.today()
+        week_start = today - timedelta(days=today.weekday()) + timedelta(weeks=offset)
+        end_of_week = week_start + timedelta(days=6)
+
+        if query.data == "mysch_image":
+            try:
+                buf = generate_my_week_image(user, offset)
+            except Exception as e:
+                logger.exception(f"Ошибка картинки: {e}")
+                await query.message.chat.send_message("⚠️ Не удалось сформировать картинку.")
+                return
+            try:
+                await query.message.delete()
+            except Exception:
+                pass
+            kb = InlineKeyboardMarkup([
+                [
+                    InlineKeyboardButton("⬅️", callback_data="mysch_img_prev"),
+                    InlineKeyboardButton("Текущая", callback_data="mysch_img_now"),
+                    InlineKeyboardButton("➡️", callback_data="mysch_img_next"),
+                ],
+                [InlineKeyboardButton("📄 Показать текстом", callback_data="mysch_text")],
+            ])
+            await query.message.chat.send_photo(
+                photo=buf,
+                caption=(
+                    f"📅 <b>Моё расписание</b>\n"
+                    f"{week_start.strftime('%d.%m')} – {end_of_week.strftime('%d.%m.%Y')}"
+                ),
+                parse_mode='HTML',
+                reply_markup=kb
+            )
+
+        elif query.data == "mysch_text":
+            text, kb = _schedule_week_view_data(user, week_start, offset)
+            try:
+                await query.message.delete()
+            except Exception:
+                pass
+            await query.message.chat.send_message(text, parse_mode='HTML', reply_markup=kb)
+
+
+async def mysch_img_nav_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    chat_id = query.message.chat_id
+
+    data = query.data
+    offset = context.user_data.get('sched_week_offset', 0)
+    if data.endswith('prev'):
+        offset -= 1
+    elif data.endswith('next'):
+        offset += 1
+    else:
+        offset = 0
+    context.user_data['sched_week_offset'] = offset
+
+    with app.app_context():
+        user = get_user_by_chat(chat_id)
+        if not user:
+            return
+        today = date.today()
+        week_start = today - timedelta(days=today.weekday()) + timedelta(weeks=offset)
+        end_of_week = week_start + timedelta(days=6)
+        try:
+            buf = generate_my_week_image(user, offset)
+        except Exception as e:
+            logger.exception(f"Ошибка картинки: {e}")
+            return
+
+    try:
+        await query.message.delete()
+    except Exception:
+        pass
+
+    kb = InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("⬅️", callback_data="mysch_img_prev"),
+            InlineKeyboardButton("Текущая", callback_data="mysch_img_now"),
+            InlineKeyboardButton("➡️", callback_data="mysch_img_next"),
+        ],
+        [InlineKeyboardButton("📄 Показать текстом", callback_data="mysch_text")],
+    ])
+    await query.message.chat.send_photo(
+        photo=buf,
+        caption=(
+            f"📅 <b>Моё расписание</b>\n"
+            f"{week_start.strftime('%d.%m')} – {end_of_week.strftime('%d.%m.%Y')}"
+        ),
+        parse_mode='HTML',
+        reply_markup=kb
+    )
+
+
+# ================== ВВОД ==================
+async def sched_edit_start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = update.message.text.strip()
+    if text == CANCEL_TEXT:
+        clear_state(context)
+        await update.message.reply_text("Отменено.", reply_markup=main_menu_keyboard())
+        return
+    try:
+        h, m = text.split(':')
+        if len(h) == 1:
+            h = '0' + h
+        st = parse_time_string(f"{h}:{m}")
+    except Exception:
+        await update.message.reply_text(
+            "❌ Введи как <code>10:00</code>",
+            parse_mode='HTML', reply_markup=cancel_keyboard()
+        )
+        return
+
+    context.user_data['sched_edit_time_start'] = st.strftime('%H:%M')
+    context.user_data['state'] = 'sched_edit_end'
+    await update.message.reply_text(
+        f"🕐 Приход: <b>{st.strftime('%H:%M')}</b>\n\n"
+        f"Теперь введи <b>время ухода</b> (ЧЧ:ММ):",
+        parse_mode='HTML', reply_markup=cancel_keyboard()
+    )
+
+
+async def sched_edit_end_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = update.message.text.strip()
+    if text == CANCEL_TEXT:
+        clear_state(context)
+        await update.message.reply_text("Отменено.", reply_markup=main_menu_keyboard())
+        return
+    try:
+        h, m = text.split(':')
+        if len(h) == 1:
+            h = '0' + h
+        et = parse_time_string(f"{h}:{m}")
+    except Exception:
+        await update.message.reply_text(
+            "❌ Введи как <code>18:00</code>",
+            parse_mode='HTML', reply_markup=cancel_keyboard()
+        )
+        return
+
+    start_str = context.user_data.get('sched_edit_time_start')
+    st = parse_time_string(start_str)
+    if st >= et:
+        await update.message.reply_text(
+            "❌ Время ухода должно быть позже прихода.",
+            reply_markup=cancel_keyboard()
+        )
+        return
+
+    ds = context.user_data.get('sched_edit_date')
+    chat_id = update.effective_chat.id
+
+    with app.app_context():
+        user = get_user_by_chat(chat_id)
+        if not user:
+            await update.message.reply_text("❌ Аккаунт не привязан.")
+            return
+        d = datetime.strptime(ds, '%Y-%m-%d').date()
+        sch = Schedule.query.filter_by(user_id=user.id, date=d).first()
+        if sch:
+            sch.planned_start = st
+            sch.planned_end = et
+            sch.is_day_off = False
+            sch.status = 'approved'
+        else:
+            sch = Schedule(
+                user_id=user.id, date=d,
+                planned_start=st, planned_end=et,
+                is_day_off=False, status='approved'
+            )
+            db.session.add(sch)
+        db.session.commit()
+        text_view, kb = _schedule_day_view_data(user, d)
+
+    clear_state(context)
+    await update.message.reply_text(
+        f"✅ Сохранено: <b>{st.strftime('%H:%M')}–{et.strftime('%H:%M')}</b>",
+        parse_mode='HTML'
+    )
+    await update.message.reply_text(text_view, parse_mode='HTML', reply_markup=kb)
+
+
+async def sched_edit_tasks_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Ввод задач на день (план)."""
+    text = update.message.text.strip()
+    if text == CANCEL_TEXT:
+        clear_state(context)
+        await update.message.reply_text("Отменено.", reply_markup=main_menu_keyboard())
+        return
+
+    ds = context.user_data.get('sched_edit_date')
+    mode = context.user_data.get('sched_tasks_mode', 'replace')
+    chat_id = update.effective_chat.id
+
+    if ds is None:
+        clear_state(context)
+        await update.message.reply_text("❌ Сессия устарела. Открой «📅 Моё расписание» заново.",
+                                        reply_markup=main_menu_keyboard())
+        return
+
+    # Если отправили «-» — очищаем всё
+    if text == '-':
+        new_lines_normalized = []
+    else:
+        new_lines_normalized = _norm_task_lines(text)
+        if not new_lines_normalized:
+            await update.message.reply_text(
+                "❌ Пустой ввод. Отправь хотя бы одну задачу, начиная с «-».",
+                reply_markup=cancel_keyboard()
+            )
+            return
+
+    with app.app_context():
+        user = get_user_by_chat(chat_id)
+        if not user:
+            await update.message.reply_text("❌ Аккаунт не привязан.")
+            return
+        try:
+            d = datetime.strptime(ds, '%Y-%m-%d').date()
+        except ValueError:
+            clear_state(context)
+            await update.message.reply_text("❌ Некорректная дата. Открой расписание заново.",
+                                            reply_markup=main_menu_keyboard())
+            return
+
+        sch = Schedule.query.filter_by(user_id=user.id, date=d).first()
+        existing_text = sch.plan_text if sch and sch.plan_text else ""
+
+        if mode == 'add':
+            existing_lines = _norm_task_lines(existing_text) if existing_text else []
+            final_lines = existing_lines + new_lines_normalized
+        else:
+            final_lines = new_lines_normalized
+
+        final_text = '\n'.join(final_lines) if final_lines else None
+
+        if sch:
+            sch.plan_text = final_text
+            # не трогаем time/status
+        else:
+            sch = Schedule(user_id=user.id, date=d, plan_text=final_text, status='approved')
+            db.session.add(sch)
+        db.session.commit()
+        text_view, kb = _schedule_day_view_data(user, d)
+
+    clear_state(context)
+    if final_text:
+        await update.message.reply_text("✅ Задачи сохранены.")
+    else:
+        await update.message.reply_text("✅ Задачи очищены.")
+    await update.message.reply_text(text_view, parse_mode='HTML', reply_markup=kb)
+
+
+async def sched_edit_note_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Ввод «что сделал» (Attendance.note)."""
+    text = update.message.text.strip()
+    if text == CANCEL_TEXT:
+        clear_state(context)
+        await update.message.reply_text("Отменено.", reply_markup=main_menu_keyboard())
+        return
+
+    ds = context.user_data.get('sched_edit_date')
+    mode = context.user_data.get('sched_tasks_mode', 'replace')
+    chat_id = update.effective_chat.id
+
+    if ds is None:
+        clear_state(context)
+        await update.message.reply_text("❌ Сессия устарела.",
+                                        reply_markup=main_menu_keyboard())
+        return
+
+    if text == '-':
+        new_lines_normalized = []
+    else:
+        new_lines_normalized = _norm_task_lines(text)
+        if not new_lines_normalized:
+            await update.message.reply_text(
+                "❌ Пустой ввод. Отправь хотя бы одну строку с «-».",
+                reply_markup=cancel_keyboard()
+            )
+            return
+
+    with app.app_context():
+        user = get_user_by_chat(chat_id)
+        if not user:
+            await update.message.reply_text("❌ Аккаунт не привязан.")
+            return
+        try:
+            d = datetime.strptime(ds, '%Y-%m-%d').date()
+        except ValueError:
+            clear_state(context)
+            await update.message.reply_text("❌ Некорректная дата.",
+                                            reply_markup=main_menu_keyboard())
+            return
+
+        att = Attendance.query.filter_by(user_id=user.id, date=d).first()
+        if not att:
+            clear_state(context)
+            await update.message.reply_text(
+                "❌ На этот день нет факта. Сначала добавь факт через «⏰ Фактическое время».",
+                reply_markup=main_menu_keyboard()
+            )
+            return
+
+        existing_text = att.note if att.note else ""
+        if mode == 'add':
+            existing_lines = _norm_task_lines(existing_text) if existing_text else []
+            final_lines = existing_lines + new_lines_normalized
+        else:
+            final_lines = new_lines_normalized
+
+        att.note = '\n'.join(final_lines) if final_lines else None
+        db.session.commit()
+        text_view, kb = _schedule_day_view_data(user, d)
+
+    clear_state(context)
+    await update.message.reply_text("✅ Сохранено.")
+    await update.message.reply_text(text_view, parse_mode='HTML', reply_markup=kb)
+
+
 # ================== ИТОГИ ==================
 async def cmd_summary(update: Update, context: ContextTypes.DEFAULT_TYPE):
     kb = InlineKeyboardMarkup([
@@ -1006,8 +2315,7 @@ async def cmd_summary(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ])
     await update.message.reply_text(
         "📊 <b>Итоги месяца</b>\n\nЧто показать?",
-        parse_mode='HTML',
-        reply_markup=kb
+        parse_mode='HTML', reply_markup=kb
     )
 
 
@@ -1022,7 +2330,6 @@ async def summary_choice_callback(update: Update, context: ContextTypes.DEFAULT_
         if not user:
             await query.edit_message_text("❌ Аккаунт не привязан.")
             return
-
         if query.data == "sum_my":
             text = summary_text(user, 0)
             kb = InlineKeyboardMarkup([
@@ -1067,12 +2374,10 @@ async def summary_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data['summary_offset'] = 0
 
     offset = context.user_data.get('summary_offset', 0)
-
     with app.app_context():
         user = get_user_by_chat(chat_id)
         if not user:
             return
-
         if data.startswith("sum_"):
             text = summary_text(user, offset)
             kb = InlineKeyboardMarkup([
@@ -1107,16 +2412,20 @@ async def summary_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = (
         "❓ <b>Помощь по боту WorkTracker</b>\n\n"
-        "Используй кнопки внизу экрана:\n\n"
-        "👤 <b>Мой профиль</b> — план и задачи на сегодня\n"
-        "📋 <b>Расписание недели</b> — твой график на неделю\n"
-        "🕐 <b>Плановое время</b> — план на конкретный день\n"
-        "⏰ <b>Фактическое время</b> — когда реально пришёл/ушёл\n"
-        "👥 <b>Расписание всех</b> — график всех сотрудников картинкой\n"
-        "📊 <b>Итоги месяца</b> — статистика\n\n"
-        "В групповом чате можно отправлять:\n"
-        "— <code>#расписание</code> с ФИО и графиком на неделю\n"
-        "— <code>#дейли</code> с датой, временем и задачами"
+        "📅 <b>Моё расписание</b> — календарь недели. Тап по дню:\n"
+        "   • 🕐 Изменить план (время)\n"
+        "   • 📝 Задачи на день (план) — что собираешься делать\n"
+        "   • ✅ Что сделал (факт) — если уже есть запись факта\n"
+        "   • 🏖 Выходной\n"
+        "   • 🗑 Очистить день\n\n"
+        "⏰ <b>Фактическое время</b> — вручную добавить факт (приход/уход/e%)\n"
+        "📊 <b>Итоги месяца</b> — статистика\n"
+        "👥 <b>Расписание всех</b> — картинкой\n"
+        "📋 <b>На неделю</b> — быстрый мастер\n\n"
+        "В группе:\n"
+        "• <code>#расписание</code> — планы на неделю\n"
+        "• <code>#дейли</code> — что сделал + время + e%\n"
+        "Если день занят — бот пришлёт кнопки в личку."
     )
     await update.message.reply_text(text, parse_mode='HTML',
                                     reply_markup=main_menu_keyboard())
@@ -1145,25 +2454,22 @@ async def detach_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     chat_id = query.message.chat_id
-
     if query.data == "detach_no":
         await query.edit_message_text("Отменено.")
         return
-
     with app.app_context():
         user = get_user_by_chat(chat_id)
         if user:
             user.telegram_chat_id = None
             user.telegram_id = None
             db.session.commit()
-
     clear_state(context)
     await query.edit_message_text(
         "✅ Аккаунт отвязан.\n\nTelegram ID удалён из профиля.\nЧтобы привязать снова — /start."
     )
 
 
-# ================== ПЛАНИРОВАНИЕ НА ВСЮ НЕДЕЛЮ ==================
+# ================== МАСТЕР «НА НЕДЕЛЮ» ==================
 async def week_plan_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     clear_state(context)
     context.user_data['state'] = 'week_choose'
@@ -1182,7 +2488,6 @@ async def week_plan_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
                               callback_data="week_pick_2")],
         [InlineKeyboardButton("❌ Отмена", callback_data="week_cancel")],
     ])
-
     text = "📅 <b>На какую неделю составить расписание?</b>"
     if update.callback_query:
         await update.callback_query.message.reply_text(text, parse_mode='HTML', reply_markup=kb)
@@ -1206,12 +2511,10 @@ async def week_pick_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
         today = date.today()
         this_monday = today - timedelta(days=today.weekday())
         week_start = this_monday + timedelta(days=7 * weeks_ahead)
-
         context.user_data['week_start'] = week_start
         context.user_data['week_plan_idx'] = 0
         context.user_data['week_plan_data'] = {}
         context.user_data['state'] = 'week_plan'
-
         await query.edit_message_text(f"📅 Начинаем с {week_start.strftime('%d.%m.%Y')}")
         await ask_week_day(update, context)
 
@@ -1224,6 +2527,49 @@ async def ask_week_day(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return await save_week_plan(update, context)
 
     day = week_start + timedelta(days=idx)
+    overwrite = context.user_data.get('week_overwrite_idx') == idx
+
+    if not overwrite:
+        with app.app_context():
+            chat_id = update.effective_chat.id
+            user = get_user_by_chat(chat_id)
+            existing = None
+            if user:
+                existing = Schedule.query.filter_by(user_id=user.id, date=day).first()
+
+        if existing and existing.status != 'rejected':
+            if existing.is_day_off:
+                current = "🏖 выходной"
+            elif existing.planned_start and existing.planned_end:
+                current = f"📋 {existing.planned_start.strftime('%H:%M')}–{existing.planned_end.strftime('%H:%M')}"
+            else:
+                current = "запись"
+            if existing.plan_text:
+                current += f"\n📝 {esc(_tasks_short(existing.plan_text, limit=180))}"
+
+            kb = InlineKeyboardMarkup([
+                [InlineKeyboardButton("✏️ Перезаписать день", callback_data="week_overwrite")],
+                [InlineKeyboardButton("⏭ Пропустить день", callback_data="week_skip")],
+                [InlineKeyboardButton("❌ Отменить всё", callback_data="week_cancel")],
+            ])
+            text = (
+                f"📅 <b>{DAYS_RU_FULL[idx]}, {day.strftime('%d.%m.%Y')}</b>\n\n"
+                f"⚠️ На этот день уже есть план:\n{current}\n\n"
+                f"Что сделать?"
+            )
+            if update.callback_query:
+                await update.callback_query.message.reply_text(text, parse_mode='HTML', reply_markup=kb)
+            else:
+                await update.message.reply_text(text, parse_mode='HTML', reply_markup=kb)
+            return
+
+    await ask_week_day_choice(update, context)
+
+
+async def ask_week_day_choice(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    idx = context.user_data.get('week_plan_idx', 0)
+    week_start = context.user_data['week_start']
+    day = week_start + timedelta(days=idx)
     day_name = DAYS_RU_FULL[idx]
     date_str = day.strftime('%d.%m.%Y')
 
@@ -1234,13 +2580,11 @@ async def ask_week_day(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("⏭ Пропустить день", callback_data="week_skip")],
         [InlineKeyboardButton("❌ Отменить всё", callback_data="week_cancel")],
     ])
-
     text = (
         f"📅 <b>Планирование недели</b>\n\n"
         f"День {idx + 1} из 7: <b>{day_name}, {date_str}</b>\n\n"
         f"Что делаешь в этот день?"
     )
-
     if update.callback_query:
         await update.callback_query.message.reply_text(text, parse_mode='HTML', reply_markup=kb)
     else:
@@ -1251,13 +2595,18 @@ async def week_plan_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
     query = update.callback_query
     await query.answer()
     data = query.data
-
     idx = context.user_data.get('week_plan_idx', 0)
 
     if data == "week_cancel":
         clear_state(context)
         await query.edit_message_text("❌ Отменено.")
         await query.message.reply_text("Главное меню:", reply_markup=main_menu_keyboard())
+        return
+
+    if data == "week_overwrite":
+        context.user_data['week_overwrite_idx'] = idx
+        await query.edit_message_text("✏️ Перезаписываем...")
+        await ask_week_day_choice(update, context)
         return
 
     if data == "week_skip":
@@ -1275,9 +2624,7 @@ async def week_plan_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
     if data == "week_full_day":
         context.user_data['week_plan_data'][idx] = {
-            'is_day_off': False,
-            'start': '10:00',
-            'end': '18:00'
+            'is_day_off': False, 'start': '10:00', 'end': '18:00'
         }
         context.user_data['week_plan_idx'] = idx + 1
         await query.edit_message_text(f"✅ {DAYS_RU_FULL[idx]}: 10:00–18:00")
@@ -1289,8 +2636,7 @@ async def week_plan_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await query.edit_message_text(f"📅 {DAYS_RU_FULL[idx]}: своё время")
         await query.message.reply_text(
             f"🕐 Введи <b>время прихода</b> в формате <b>ЧЧ:ММ</b>\nНапример: <code>09:30</code>",
-            parse_mode='HTML',
-            reply_markup=cancel_keyboard()
+            parse_mode='HTML', reply_markup=cancel_keyboard()
         )
         return
 
@@ -1301,7 +2647,6 @@ async def week_custom_start_handler(update: Update, context: ContextTypes.DEFAUL
         clear_state(context)
         await update.message.reply_text("Отменено.", reply_markup=main_menu_keyboard())
         return
-
     try:
         h, m = text.split(':')
         if len(h) == 1:
@@ -1311,15 +2656,13 @@ async def week_custom_start_handler(update: Update, context: ContextTypes.DEFAUL
         await update.message.reply_text("❌ Введи как <code>09:30</code>",
                                         parse_mode='HTML', reply_markup=cancel_keyboard())
         return
-
     context.user_data['week_temp_start'] = start_time
     idx = context.user_data['week_plan_idx']
     context.user_data['state'] = 'week_custom_end'
     await update.message.reply_text(
         f"📅 <b>{DAYS_RU_FULL[idx]}</b>, приход: <b>{start_time.strftime('%H:%M')}</b>\n\n"
         f"🕕 Введи <b>время ухода</b>:",
-        parse_mode='HTML',
-        reply_markup=cancel_keyboard()
+        parse_mode='HTML', reply_markup=cancel_keyboard()
     )
 
 
@@ -1329,7 +2672,6 @@ async def week_custom_end_handler(update: Update, context: ContextTypes.DEFAULT_
         clear_state(context)
         await update.message.reply_text("Отменено.", reply_markup=main_menu_keyboard())
         return
-
     try:
         h, m = text.split(':')
         if len(h) == 1:
@@ -1339,13 +2681,11 @@ async def week_custom_end_handler(update: Update, context: ContextTypes.DEFAULT_
         await update.message.reply_text("❌ Введи как <code>18:00</code>",
                                         parse_mode='HTML', reply_markup=cancel_keyboard())
         return
-
     start_time = context.user_data['week_temp_start']
     if start_time >= end_time:
         await update.message.reply_text("❌ Время ухода позже прихода!",
                                         reply_markup=cancel_keyboard())
         return
-
     idx = context.user_data['week_plan_idx']
     context.user_data['week_plan_data'][idx] = {
         'is_day_off': False,
@@ -1354,7 +2694,6 @@ async def week_custom_end_handler(update: Update, context: ContextTypes.DEFAULT_
     }
     context.user_data['week_plan_idx'] = idx + 1
     context.user_data['state'] = 'week_plan'
-
     await update.message.reply_text(
         f"✅ {DAYS_RU_FULL[idx]}: {start_time.strftime('%H:%M')}–{end_time.strftime('%H:%M')}"
     )
@@ -1363,10 +2702,14 @@ async def week_custom_end_handler(update: Update, context: ContextTypes.DEFAULT_
 
 async def save_week_plan(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
-    week_start = context.user_data['week_start']
+    week_start = context.user_data.get('week_start')
     data = context.user_data.get('week_plan_data', {})
-
     message = update.message if update.message else update.callback_query.message
+
+    if not week_start:
+        clear_state(context)
+        await message.reply_text("❌ Сессия устарела.", reply_markup=main_menu_keyboard())
+        return
 
     with app.app_context():
         user = get_user_by_chat(chat_id)
@@ -1375,207 +2718,40 @@ async def save_week_plan(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
         created = 0
-        skipped = []
+        replaced = 0
         for idx, info in data.items():
             day = week_start + timedelta(days=idx)
             existing = Schedule.query.filter_by(user_id=user.id, date=day).first()
-            if existing:
-                skipped.append(day.strftime('%d.%m'))
-                continue
 
-            if info.get('is_day_off'):
-                s = Schedule(user_id=user.id, date=day, is_day_off=True, status='approved')
+            if existing:
+                if info.get('is_day_off'):
+                    existing.is_day_off = True
+                    existing.planned_start = None
+                    existing.planned_end = None
+                    existing.status = 'approved'
+                else:
+                    existing.is_day_off = False
+                    existing.planned_start = parse_time_string(info['start'])
+                    existing.planned_end = parse_time_string(info['end'])
+                    existing.status = 'approved'
+                replaced += 1
             else:
-                s = Schedule(
-                    user_id=user.id, date=day,
-                    planned_start=parse_time_string(info['start']),
-                    planned_end=parse_time_string(info['end']),
-                    is_day_off=False, status='approved'
-                )
-            db.session.add(s)
-            created += 1
+                if info.get('is_day_off'):
+                    s = Schedule(user_id=user.id, date=day, is_day_off=True, status='approved')
+                else:
+                    s = Schedule(
+                        user_id=user.id, date=day,
+                        planned_start=parse_time_string(info['start']),
+                        planned_end=parse_time_string(info['end']),
+                        is_day_off=False, status='approved'
+                    )
+                db.session.add(s)
+                created += 1
         db.session.commit()
 
-    text = f"✅ Готово! Сохранено {created} дней на неделю с {week_start.strftime('%d.%m.%Y')}."
-    if skipped:
-        text += f"\n\n⚠️ Пропущены дни (уже были заняты): {', '.join(skipped)}"
-
+    text = f"✅ Готово!\nСоздано: {created}\nПерезаписано: {replaced}"
     clear_state(context)
     await message.reply_text(text, reply_markup=main_menu_keyboard())
-
-
-# ================== ПЛАН НА ДЕНЬ ==================
-async def plan_today_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-
-    if query.data == "plan_week":
-        await week_plan_start(update, context)
-        return
-
-    if query.data == "plan_today":
-        d = date.today()
-    else:
-        d = date.today() + timedelta(days=1)
-
-    context.user_data['plan_date'] = d
-    context.user_data['state'] = 'plan_start'
-
-    await query.edit_message_text(f"📅 Дата: {d.strftime('%d.%m.%Y')}")
-    await query.message.reply_text(
-        f"🕐 Введи <b>время прихода</b> в формате <b>ЧЧ:ММ</b>\nНапример: <code>10:00</code>",
-        parse_mode='HTML',
-        reply_markup=cancel_keyboard()
-    )
-
-
-async def plan_date_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = update.message.text.strip()
-    if text == CANCEL_TEXT:
-        clear_state(context)
-        await update.message.reply_text("Отменено.", reply_markup=main_menu_keyboard())
-        return
-
-    try:
-        d = datetime.strptime(text, '%d.%m.%Y').date()
-    except ValueError:
-        await update.message.reply_text(
-            "❌ Введи как <code>23.09.2026</code>",
-            parse_mode='HTML', reply_markup=cancel_keyboard()
-        )
-        return
-
-    context.user_data['plan_date'] = d
-    context.user_data['state'] = 'plan_start'
-    await update.message.reply_text(
-        f"📅 Дата: <b>{d.strftime('%d.%m.%Y')}</b>\n\n🕐 Введи <b>время прихода</b> (ЧЧ:ММ)",
-        parse_mode='HTML', reply_markup=cancel_keyboard()
-    )
-
-
-async def plan_start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = update.message.text.strip()
-    if text == CANCEL_TEXT:
-        clear_state(context)
-        await update.message.reply_text("Отменено.", reply_markup=main_menu_keyboard())
-        return
-
-    try:
-        h, m = text.split(':')
-        if len(h) == 1:
-            h = '0' + h
-        start_time = parse_time_string(f"{h}:{m}")
-    except Exception:
-        await update.message.reply_text("❌ Введи как <code>10:00</code>",
-                                        parse_mode='HTML', reply_markup=cancel_keyboard())
-        return
-
-    context.user_data['plan_start'] = start_time
-    context.user_data['state'] = 'plan_end'
-    await update.message.reply_text(
-        f"🕐 Приход: <b>{start_time.strftime('%H:%M')}</b>\n\n🕕 Введи <b>время ухода</b> (ЧЧ:ММ)",
-        parse_mode='HTML', reply_markup=cancel_keyboard()
-    )
-
-
-async def plan_end_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = update.message.text.strip()
-    if text == CANCEL_TEXT:
-        clear_state(context)
-        await update.message.reply_text("Отменено.", reply_markup=main_menu_keyboard())
-        return
-
-    try:
-        h, m = text.split(':')
-        if len(h) == 1:
-            h = '0' + h
-        end_time = parse_time_string(f"{h}:{m}")
-    except Exception:
-        await update.message.reply_text("❌ Введи как <code>18:00</code>",
-                                        parse_mode='HTML', reply_markup=cancel_keyboard())
-        return
-
-    start_time = context.user_data['plan_start']
-    if start_time >= end_time:
-        await update.message.reply_text("❌ Время ухода должно быть позже прихода.",
-                                        reply_markup=cancel_keyboard())
-        return
-
-    d = context.user_data['plan_date']
-    chat_id = update.effective_chat.id
-
-    with app.app_context():
-        user = get_user_by_chat(chat_id)
-        existing = Schedule.query.filter_by(user_id=user.id, date=d).first()
-
-        if existing:
-            if existing.is_day_off:
-                existing_text = "🏖 Выходной"
-            else:
-                existing_text = f"📋 {existing.planned_start.strftime('%H:%M')}–{existing.planned_end.strftime('%H:%M')}"
-
-            context.user_data['pending_plan'] = {'date': d, 'start': start_time, 'end': end_time}
-            context.user_data['state'] = 'plan_conflict'
-
-            kb = InlineKeyboardMarkup([
-                [InlineKeyboardButton("✏️ Заменить", callback_data="plan_replace")],
-                [InlineKeyboardButton("❌ Оставить старое", callback_data="plan_keep")],
-            ])
-            await update.message.reply_text(
-                f"⚠️ На <b>{d.strftime('%d.%m.%Y')}</b> уже есть запись:\n"
-                f"{existing_text}\n\n"
-                f"Новая заявка: <b>{start_time.strftime('%H:%M')}–{end_time.strftime('%H:%M')}</b>\n\n"
-                f"Что сделать?",
-                parse_mode='HTML',
-                reply_markup=kb
-            )
-            return
-
-        schedule = Schedule(
-            user_id=user.id, date=d,
-            planned_start=start_time, planned_end=end_time,
-            is_day_off=False, status='approved'
-        )
-        db.session.add(schedule)
-        db.session.commit()
-
-    clear_state(context)
-    await update.message.reply_text(
-        f"✅ План сохранён!\n\n📅 {d.strftime('%d.%m.%Y')}\n⏰ {start_time.strftime('%H:%M')} – {end_time.strftime('%H:%M')}",
-        reply_markup=main_menu_keyboard()
-    )
-
-
-async def plan_conflict_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-
-    if query.data == "plan_keep":
-        clear_state(context)
-        await query.edit_message_text("Оставлено как было.")
-        await query.message.reply_text("Главное меню:", reply_markup=main_menu_keyboard())
-        return
-
-    if query.data == "plan_replace":
-        data = context.user_data.get('pending_plan')
-        if not data:
-            await query.edit_message_text("❌ Данные потеряны, попробуй снова.")
-            return
-
-        chat_id = query.message.chat_id
-        with app.app_context():
-            user = get_user_by_chat(chat_id)
-            existing = Schedule.query.filter_by(user_id=user.id, date=data['date']).first()
-            if existing:
-                existing.planned_start = data['start']
-                existing.planned_end = data['end']
-                existing.is_day_off = False
-                existing.status = 'approved'
-                db.session.commit()
-
-        clear_state(context)
-        await query.edit_message_text("✅ Заменено.")
-        await query.message.reply_text("Главное меню:", reply_markup=main_menu_keyboard())
 
 
 # ================== ФАКТ ==================
@@ -1585,45 +2761,9 @@ async def fact_date_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
     d = date.today() if query.data == "fact_today" else date.today() - timedelta(days=1)
     context.user_data['fact_date'] = d
     context.user_data['state'] = 'fact_start'
-
     await query.edit_message_text(f"📅 Дата: {d.strftime('%d.%m.%Y')}")
     await query.message.reply_text(
         "🕐 Введи <b>время прихода</b> (ЧЧ:ММ)",
-        parse_mode='HTML',
-        reply_markup=cancel_keyboard()
-    )
-
-
-async def fact_date_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = update.message.text.strip().lower()
-    if text == CANCEL_TEXT.lower() or text == CANCEL_TEXT:
-        clear_state(context)
-        await update.message.reply_text("Отменено.", reply_markup=main_menu_keyboard())
-        return
-
-    if text == 'сегодня':
-        d = date.today()
-    elif text == 'вчера':
-        d = date.today() - timedelta(days=1)
-    else:
-        try:
-            d = datetime.strptime(text, '%d.%m.%Y').date()
-        except ValueError:
-            await update.message.reply_text(
-                "❌ Введи как <code>23.09.2026</code>, или «сегодня»/«вчера».",
-                parse_mode='HTML', reply_markup=cancel_keyboard()
-            )
-            return
-
-    if d > date.today():
-        await update.message.reply_text("❌ Нельзя на будущую дату.",
-                                        reply_markup=cancel_keyboard())
-        return
-
-    context.user_data['fact_date'] = d
-    context.user_data['state'] = 'fact_start'
-    await update.message.reply_text(
-        f"📅 Дата: <b>{d.strftime('%d.%m.%Y')}</b>\n\n🕐 Введи <b>время прихода</b> (ЧЧ:ММ)",
         parse_mode='HTML', reply_markup=cancel_keyboard()
     )
 
@@ -1634,7 +2774,6 @@ async def fact_start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
         clear_state(context)
         await update.message.reply_text("Отменено.", reply_markup=main_menu_keyboard())
         return
-
     try:
         h, m = text.split(':')
         if len(h) == 1:
@@ -1644,7 +2783,6 @@ async def fact_start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await update.message.reply_text("❌ Введи как <code>10:00</code>",
                                         parse_mode='HTML', reply_markup=cancel_keyboard())
         return
-
     context.user_data['fact_start'] = start_time
     context.user_data['state'] = 'fact_end'
     await update.message.reply_text(
@@ -1659,7 +2797,6 @@ async def fact_end_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         clear_state(context)
         await update.message.reply_text("Отменено.", reply_markup=main_menu_keyboard())
         return
-
     try:
         h, m = text.split(':')
         if len(h) == 1:
@@ -1669,12 +2806,10 @@ async def fact_end_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ Введи как <code>18:00</code>",
                                         parse_mode='HTML', reply_markup=cancel_keyboard())
         return
-
     if context.user_data['fact_start'] >= end_time:
         await update.message.reply_text("❌ Время ухода должно быть позже прихода.",
                                         reply_markup=cancel_keyboard())
         return
-
     context.user_data['fact_end'] = end_time
     context.user_data['state'] = 'fact_eff'
     await update.message.reply_text(
@@ -1689,7 +2824,6 @@ async def fact_eff_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         clear_state(context)
         await update.message.reply_text("Отменено.", reply_markup=main_menu_keyboard())
         return
-
     try:
         eff = float(text)
         if not (0 <= eff <= 100):
@@ -1698,7 +2832,6 @@ async def fact_eff_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ Введи число от 0 до 100",
                                         reply_markup=cancel_keyboard())
         return
-
     chat_id = update.effective_chat.id
     d = context.user_data['fact_date']
     start_time = context.user_data['fact_start']
@@ -1707,7 +2840,6 @@ async def fact_eff_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     with app.app_context():
         user = get_user_by_chat(chat_id)
         existing = Attendance.query.filter_by(user_id=user.id, date=d).first()
-
         if existing:
             existing_text = (
                 f"⏰ {existing.actual_start.strftime('%H:%M')}–{existing.actual_end.strftime('%H:%M')}\n"
@@ -1717,7 +2849,6 @@ async def fact_eff_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 'date': d, 'start': start_time, 'end': end_time, 'eff': eff
             }
             context.user_data['state'] = 'fact_conflict'
-
             kb = InlineKeyboardMarkup([
                 [InlineKeyboardButton("✏️ Заменить", callback_data="fact_replace")],
                 [InlineKeyboardButton("❌ Оставить старое", callback_data="fact_keep")],
@@ -1726,20 +2857,15 @@ async def fact_eff_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"⚠️ На <b>{d.strftime('%d.%m.%Y')}</b> уже есть отметка:\n\n"
                 f"{existing_text}\n\n"
                 f"Новая отметка: <b>{start_time.strftime('%H:%M')}–{end_time.strftime('%H:%M')}</b>, "
-                f"e% <b>{int(eff)}</b>\n\n"
-                f"Что сделать?",
-                parse_mode='HTML',
-                reply_markup=kb
+                f"e% <b>{int(eff)}</b>\n\nЧто сделать?",
+                parse_mode='HTML', reply_markup=kb
             )
             return
-
         schedule = Schedule.query.filter_by(user_id=user.id, date=d, status='approved').first()
         early_start = 0
         if schedule and schedule.planned_start and not schedule.is_day_off:
             early_start = time_to_minutes(start_time) - time_to_minutes(schedule.planned_start)
-
         status = 'confirmed' if d == date.today() else 'pending'
-
         att = Attendance(
             user_id=user.id, date=d,
             actual_start=start_time, actual_end=end_time,
@@ -1767,19 +2893,16 @@ async def fact_eff_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def fact_conflict_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-
     if query.data == "fact_keep":
         clear_state(context)
         await query.edit_message_text("Оставлено как было.")
         await query.message.reply_text("Главное меню:", reply_markup=main_menu_keyboard())
         return
-
     if query.data == "fact_replace":
         data = context.user_data.get('pending_fact')
         if not data:
             await query.edit_message_text("❌ Данные потеряны, попробуй снова.")
             return
-
         chat_id = query.message.chat_id
         with app.app_context():
             user = get_user_by_chat(chat_id)
@@ -1791,16 +2914,13 @@ async def fact_conflict_callback(update: Update, context: ContextTypes.DEFAULT_T
                 early_start = 0
                 if schedule and schedule.planned_start and not schedule.is_day_off:
                     early_start = time_to_minutes(data['start']) - time_to_minutes(schedule.planned_start)
-
                 status = 'confirmed' if data['date'] == date.today() else 'pending'
-
                 existing.actual_start = data['start']
                 existing.actual_end = data['end']
                 existing.efficiency = data['eff'] / 100
                 existing.early_start = early_start
                 existing.status = status
                 db.session.commit()
-
         clear_state(context)
         await query.edit_message_text("✅ Заменено.")
         await query.message.reply_text("Главное меню:", reply_markup=main_menu_keyboard())
@@ -1815,12 +2935,10 @@ async def abs_type_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data['abs_type'] = abs_type
     context.user_data['state'] = 'abs_date_start'
     type_ru = ABS_TYPE_RU.get(abs_type, abs_type)
-
     await query.edit_message_text(f"{type_ru}")
     await query.message.reply_text(
         "📅 Введи <b>дату начала</b> в формате <b>ДД.ММ.ГГГГ</b>\nНапример: <code>25.09.2026</code>",
-        parse_mode='HTML',
-        reply_markup=cancel_keyboard()
+        parse_mode='HTML', reply_markup=cancel_keyboard()
     )
 
 
@@ -1830,14 +2948,12 @@ async def abs_date_start_handler(update: Update, context: ContextTypes.DEFAULT_T
         clear_state(context)
         await update.message.reply_text("Отменено.", reply_markup=main_menu_keyboard())
         return
-
     try:
         d = datetime.strptime(text, '%d.%m.%Y').date()
     except ValueError:
         await update.message.reply_text("❌ Введи как <code>25.09.2026</code>",
                                         parse_mode='HTML', reply_markup=cancel_keyboard())
         return
-
     context.user_data['abs_start'] = d
     context.user_data['state'] = 'abs_date_end'
     await update.message.reply_text(
@@ -1852,21 +2968,17 @@ async def abs_date_end_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         clear_state(context)
         await update.message.reply_text("Отменено.", reply_markup=main_menu_keyboard())
         return
-
     try:
         d = datetime.strptime(text, '%d.%m.%Y').date()
     except ValueError:
         await update.message.reply_text("❌ Введи как <code>30.09.2026</code>",
                                         parse_mode='HTML', reply_markup=cancel_keyboard())
         return
-
     if d < context.user_data['abs_start']:
         await update.message.reply_text("❌ Дата окончания раньше начала.",
                                         reply_markup=cancel_keyboard())
         return
-
     context.user_data['abs_end'] = d
-
     if context.user_data.get('abs_type') == 'other':
         context.user_data['state'] = 'abs_custom'
         await update.message.reply_text(
@@ -1874,7 +2986,6 @@ async def abs_date_end_handler(update: Update, context: ContextTypes.DEFAULT_TYP
             reply_markup=cancel_keyboard()
         )
         return
-
     context.user_data['state'] = 'abs_file'
     kb = InlineKeyboardMarkup([
         [InlineKeyboardButton("⏭ Пропустить (без файла)", callback_data="abs_skip_file")],
@@ -1891,12 +3002,10 @@ async def abs_custom_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
         clear_state(context)
         await update.message.reply_text("Отменено.", reply_markup=main_menu_keyboard())
         return
-
     if len(text) > 200:
         await update.message.reply_text("❌ Максимум 200 символов.",
                                         reply_markup=cancel_keyboard())
         return
-
     context.user_data['abs_custom'] = text
     context.user_data['state'] = 'abs_file'
     kb = InlineKeyboardMarkup([
@@ -1913,23 +3022,19 @@ async def abs_save_final(chat_id, context, file_path=None):
     d_end = context.user_data['abs_end']
     abs_type = context.user_data['abs_type']
     custom = context.user_data.get('abs_custom')
-
     with app.app_context():
         user = get_user_by_chat(chat_id)
         if not user:
             return "❌ Привяжи аккаунт /start"
-
         absence = Absence(
             user_id=user.id,
             date_start=d_start, date_end=d_end,
             type=abs_type,
             custom_type=custom if abs_type == 'other' else None,
-            status='pending',
-            file_path=file_path
+            status='pending', file_path=file_path
         )
         db.session.add(absence)
         db.session.commit()
-
         admins = User.query.filter_by(role='admin').all()
         type_ru = ABS_TYPE_RU_SHORT.get(abs_type, abs_type)
         if abs_type == 'other' and custom:
@@ -1937,8 +3042,7 @@ async def abs_save_final(chat_id, context, file_path=None):
         for admin in admins:
             if admin.telegram_chat_id:
                 notif = Notification(
-                    user_id=admin.id,
-                    chat_id=admin.telegram_chat_id,
+                    user_id=admin.id, chat_id=admin.telegram_chat_id,
                     message=f"📩 {user.full_name} — заявка на {type_ru}: {d_start.strftime('%d.%m.%Y')} – {d_end.strftime('%d.%m.%Y')}"
                 )
                 db.session.add(notif)
@@ -1947,7 +3051,6 @@ async def abs_save_final(chat_id, context, file_path=None):
     type_ru = ABS_TYPE_RU.get(abs_type, abs_type)
     if abs_type == 'other' and custom:
         type_ru = f"📌 {custom}"
-
     text = f"✅ <b>Заявка отправлена!</b>\n\n📌 {type_ru}\n📅 {d_start.strftime('%d.%m.%Y')} – {d_end.strftime('%d.%m.%Y')}"
     if file_path:
         text += "\n📎 Файл прикреплён"
@@ -1959,7 +3062,6 @@ async def abs_file_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message = update.message
     chat_id = update.effective_chat.id
     file_path = None
-
     if message.document:
         f = await message.document.get_file()
         ext = os.path.splitext(message.document.file_name)[1] or '.dat'
@@ -1980,7 +3082,6 @@ async def abs_file_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await message.reply_text("❌ Отправь файл или нажми «Пропустить».")
         return
-
     text = await abs_save_final(chat_id, context, file_path=file_path)
     clear_state(context)
     await message.reply_text(text, parse_mode='HTML', reply_markup=main_menu_keyboard())
@@ -2000,11 +3101,14 @@ async def abs_skip_file_callback(update: Update, context: ContextTypes.DEFAULT_T
 async def text_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text or ''
     chat_id = update.effective_chat.id
+    chat_type = update.effective_chat.type
 
     with app.app_context():
         user = get_user_by_chat(chat_id)
 
     if not user:
+        if chat_type in ('group', 'supergroup'):
+            return
         if context.user_data.get('state') == 'ask_email':
             await receive_email(update, context)
         else:
@@ -2016,10 +3120,11 @@ async def text_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     state = context.user_data.get('state')
 
-    if state in ('plan_date', 'plan_start', 'plan_end',
-                 'fact_date', 'fact_start', 'fact_end', 'fact_eff',
+    if state in ('fact_date', 'fact_start', 'fact_end', 'fact_eff',
                  'abs_date_start', 'abs_date_end', 'abs_custom', 'abs_file',
-                 'week_custom_start', 'week_custom_end'):
+                 'week_custom_start', 'week_custom_end',
+                 'sched_edit_start', 'sched_edit_end',
+                 'sched_edit_tasks', 'sched_edit_note'):
 
         if text == CANCEL_TEXT:
             clear_state(context)
@@ -2027,15 +3132,7 @@ async def text_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
                                             reply_markup=main_menu_keyboard())
             return
 
-        if state == 'plan_date':
-            await plan_date_handler(update, context)
-        elif state == 'plan_start':
-            await plan_start_handler(update, context)
-        elif state == 'plan_end':
-            await plan_end_handler(update, context)
-        elif state == 'fact_date':
-            await fact_date_handler(update, context)
-        elif state == 'fact_start':
+        if state == 'fact_start':
             await fact_start_handler(update, context)
         elif state == 'fact_end':
             await fact_end_handler(update, context)
@@ -2053,6 +3150,14 @@ async def text_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await week_custom_start_handler(update, context)
         elif state == 'week_custom_end':
             await week_custom_end_handler(update, context)
+        elif state == 'sched_edit_start':
+            await sched_edit_start_handler(update, context)
+        elif state == 'sched_edit_end':
+            await sched_edit_end_handler(update, context)
+        elif state == 'sched_edit_tasks':
+            await sched_edit_tasks_handler(update, context)
+        elif state == 'sched_edit_note':
+            await sched_edit_note_handler(update, context)
         return
 
     if text == CANCEL_TEXT:
@@ -2060,37 +3165,40 @@ async def text_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Главное меню 👇", reply_markup=main_menu_keyboard())
         return
 
-    if 'Мой профиль' in text:
-        clear_state(context); await cmd_profile(update, context); return
-    if 'Расписание недели' in text:
-        clear_state(context); await cmd_week(update, context); return
-    if 'Расписание на неделю' in text:
-        await week_plan_start(update, context); return
-    if 'Расписание всех' in text:
-        clear_state(context); await cmd_all_week(update, context); return
-    if 'Кто работает' in text:
-        clear_state(context); await cmd_who(update, context); return
-    if 'Мои заявки' in text:
-        clear_state(context); await cmd_my_absences(update, context); return
-    if 'Итоги месяца' in text:
-        clear_state(context); await cmd_summary(update, context); return
-    if 'Помощь' in text:
-        clear_state(context); await cmd_help(update, context); return
-    if 'Отвязать аккаунт' in text:
-        clear_state(context); await detach_start(update, context); return
-
-    if 'Плановое время' in text:
+    if 'Моё расписание' in text:
         clear_state(context)
-        context.user_data['state'] = 'plan_date'
-        kb = InlineKeyboardMarkup([
-            [InlineKeyboardButton("📅 Сегодня", callback_data="plan_today")],
-            [InlineKeyboardButton("📅 Завтра", callback_data="plan_tomorrow")],
-            [InlineKeyboardButton("📆 На всю неделю", callback_data="plan_week")],
-        ])
-        await update.message.reply_text(
-            "🕐 <b>Плановое время</b>\n\nНа какой день?",
-            parse_mode='HTML', reply_markup=kb
-        )
+        await cmd_my_schedule(update, context)
+        return
+    if 'Мой профиль' in text:
+        clear_state(context)
+        await cmd_profile(update, context)
+        return
+    if 'На неделю' in text:
+        await week_plan_start(update, context)
+        return
+    if 'Расписание всех' in text:
+        clear_state(context)
+        await cmd_all_week(update, context)
+        return
+    if 'Кто работает' in text:
+        clear_state(context)
+        await cmd_who(update, context)
+        return
+    if 'Мои заявки' in text:
+        clear_state(context)
+        await cmd_my_absences(update, context)
+        return
+    if 'Итоги месяца' in text:
+        clear_state(context)
+        await cmd_summary(update, context)
+        return
+    if 'Помощь' in text:
+        clear_state(context)
+        await cmd_help(update, context)
+        return
+    if 'Отвязать аккаунт' in text:
+        clear_state(context)
+        await detach_start(update, context)
         return
 
     if 'Фактическое время' in text:
@@ -2127,40 +3235,26 @@ async def text_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
-# ================== ПАРСИНГ КОРОТКИХ КОМАНД (#план/#факт/#отпуск) ==================
+# ================== #план / #факт / #отпуск ==================
 async def group_parser(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = update.message
     chat = update.effective_chat
-    tg_user = update.effective_user
-
     if chat.type not in ('group', 'supergroup'):
         return
     if not msg or not msg.text:
         return
-
     text = msg.text.strip()
     if not (text.startswith('#план') or text.startswith('#факт') or text.startswith('#отпуск')):
         return
-
     parts = text.split()
     if len(parts) < 2:
         return
-
     command = parts[0].lower()
 
     with app.app_context():
-        user = None
-        if tg_user.username:
-            user = User.query.filter(User.telegram_id == f"@{tg_user.username}").first()
+        user = find_user_by_telegram(update)
         if not user:
-            user = User.query.filter(User.telegram_chat_id == str(tg_user.id)).first()
-
-        if not user:
-            await msg.reply_text(
-                f"⚠️ {tg_user.full_name}, сначала привяжи аккаунт через /start в личке с ботом."
-            )
             return
-
         try:
             if command == '#план':
                 if len(parts) != 4:
@@ -2170,12 +3264,10 @@ async def group_parser(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 end_time = parse_time_string(parts[3])
                 if start_time >= end_time:
                     raise ValueError("время ухода должно быть позже")
-
                 existing = Schedule.query.filter_by(user_id=user.id, date=d).first()
                 if existing:
                     await msg.reply_text(f"⚠️ {user.full_name}, на {d.strftime('%d.%m.%Y')} уже есть план.")
                     return
-
                 schedule = Schedule(
                     user_id=user.id, date=d,
                     planned_start=start_time, planned_end=end_time,
@@ -2187,7 +3279,6 @@ async def group_parser(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     f"✅ {user.full_name}, план на {d.strftime('%d.%m.%Y')}: "
                     f"{start_time.strftime('%H:%M')}–{end_time.strftime('%H:%M')}"
                 )
-
             elif command == '#факт':
                 if len(parts) != 5:
                     raise ValueError("формат: #факт ДД.ММ.ГГГГ ЧЧ:ММ ЧЧ:ММ ЭФФЕКТИВНОСТЬ")
@@ -2201,23 +3292,19 @@ async def group_parser(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     raise ValueError("нельзя на будущую дату")
                 if not (0 <= eff <= 100):
                     raise ValueError("эффективность от 0 до 100")
-
                 existing = Attendance.query.filter_by(user_id=user.id, date=d).first()
                 if existing:
                     await msg.reply_text(f"⚠️ {user.full_name}, на {d.strftime('%d.%m.%Y')} уже есть факт.")
                     return
-
                 schedule = Schedule.query.filter_by(user_id=user.id, date=d, status='approved').first()
                 early_start = 0
                 if schedule and schedule.planned_start and not schedule.is_day_off:
                     early_start = time_to_minutes(start_time) - time_to_minutes(schedule.planned_start)
-
                 status = 'confirmed' if d == date.today() else 'pending'
                 att = Attendance(
                     user_id=user.id, date=d,
                     actual_start=start_time, actual_end=end_time,
-                    efficiency=eff / 100, early_start=early_start,
-                    status=status
+                    efficiency=eff / 100, early_start=early_start, status=status
                 )
                 db.session.add(att)
                 db.session.commit()
@@ -2225,7 +3312,6 @@ async def group_parser(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     f"✅ {user.full_name}, факт на {d.strftime('%d.%m.%Y')}: "
                     f"{start_time.strftime('%H:%M')}–{end_time.strftime('%H:%M')} (e% {int(eff)})"
                 )
-
             elif command == '#отпуск':
                 if len(parts) < 4:
                     raise ValueError("формат: #отпуск ДД.ММ.ГГГГ ДД.ММ.ГГГГ ТИП")
@@ -2236,12 +3322,9 @@ async def group_parser(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     raise ValueError("дата начала позже конца")
                 if abs_type not in ('vacation', 'sick', 'other'):
                     raise ValueError("тип: vacation / sick / other")
-
                 custom = ' '.join(parts[4:]) if len(parts) > 4 else None
-
                 absence = Absence(
-                    user_id=user.id,
-                    date_start=d_start, date_end=d_end,
+                    user_id=user.id, date_start=d_start, date_end=d_end,
                     type=abs_type,
                     custom_type=custom if abs_type == 'other' else None,
                     status='pending'
@@ -2252,7 +3335,6 @@ async def group_parser(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     f"✅ {user.full_name}, заявка отправлена: "
                     f"{d_start.strftime('%d.%m.%Y')} – {d_end.strftime('%d.%m.%Y')}"
                 )
-
         except ValueError as e:
             await msg.reply_text(f"❌ Ошибка: {e}")
         except Exception as e:
@@ -2265,8 +3347,7 @@ async def group_parser(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def morning_who(context: ContextTypes.DEFAULT_TYPE):
     with app.app_context():
         today = date.today()
-        next_monday = today + timedelta(days=(7 - today.weekday()))
-
+        next_monday = today + timedelta(days=(7 - today.weekday()) % 7 or 7)
         plans = Schedule.query.filter_by(date=today, status='approved').all()
         working_lines = []
         for plan in plans:
@@ -2276,32 +3357,27 @@ async def morning_who(context: ContextTypes.DEFAULT_TYPE):
                 working_lines.append(
                     f"• {plan.user.full_name}: {plan.planned_start.strftime('%H:%M')}–{plan.planned_end.strftime('%H:%M')}"
                 )
-
         if working_lines:
             text_who = "☀️ <b>Доброе утро!</b>\n\n👥 <b>Сегодня работают:</b>\n\n" + "\n".join(working_lines)
         else:
             text_who = "☀️ <b>Доброе утро!</b>\n\nСегодня никто не работает."
-
         employees = User.query.filter_by(role='employee', status='active').all()
         sent_count = 0
         for emp in employees:
             if not emp.telegram_chat_id:
                 continue
-
             has_plan_next = Schedule.query.filter(
                 Schedule.user_id == emp.id,
                 Schedule.date >= next_monday
             ).first() is not None
-
             if not has_plan_next:
                 reminder = (
                     f"\n\n📅 <b>Напоминание:</b> у тебя ещё нет расписания на следующую неделю "
                     f"(с {next_monday.strftime('%d.%m.%Y')}).\n"
-                    f"Отправь через «📅 Расписание на неделю»"
+                    f"Открой «📅 Моё расписание»"
                 )
             else:
                 reminder = ""
-
             try:
                 await context.bot.send_message(
                     chat_id=emp.telegram_chat_id,
@@ -2311,8 +3387,53 @@ async def morning_who(context: ContextTypes.DEFAULT_TYPE):
                 sent_count += 1
             except Exception as e:
                 logger.error(f"Ошибка утренней рассылки {emp.id}: {e}")
-
         logger.info(f"Утренняя рассылка: отправлено {sent_count}")
+
+
+async def weekly_planning_reminder(context: ContextTypes.DEFAULT_TYPE):
+    with app.app_context():
+        today = date.today()
+        days_until_monday = (7 - today.weekday()) % 7
+        if days_until_monday == 0:
+            days_until_monday = 7
+        next_monday = today + timedelta(days=days_until_monday)
+        week_end = next_monday + timedelta(days=6)
+
+        employees = User.query.filter_by(role='employee', status='active').all()
+        sent = 0
+        for emp in employees:
+            if not emp.telegram_chat_id:
+                continue
+            has_plan = Schedule.query.filter(
+                Schedule.user_id == emp.id,
+                Schedule.date >= next_monday
+            ).first() is not None
+            if has_plan:
+                continue
+            try:
+                await context.bot.send_message(
+                    chat_id=emp.telegram_chat_id,
+                    text=(
+                        f"📅 <b>Напоминание о расписании</b>\n\n"
+                        f"{esc(emp.full_name)}, пришли своё расписание "
+                        f"на неделю с <b>{next_monday.strftime('%d.%m.%Y')}</b>.\n\n"
+                        f"<b>Способы:</b>\n"
+                        f"• В боте: «📅 Моё расписание» → тапни по дню\n"
+                        f"• Быстрый мастер: «📋 На неделю»\n"
+                        f"• В рабочей группе:\n"
+                        f"<code>#расписание\n"
+                        f"Спринт {next_monday.strftime('%d.%m')}-{week_end.strftime('%d.%m')}\n"
+                        f"Фамилия И.О.\n"
+                        f"ПН: 10:00-18:00\n"
+                        f"ВТ: 10:00-18:00\n"
+                        f"...</code>"
+                    ),
+                    parse_mode='HTML'
+                )
+                sent += 1
+            except Exception as e:
+                logger.error(f"Ошибка напоминания {emp.id}: {e}")
+        logger.info(f"Напоминание о расписании: отправлено {sent}")
 
 
 async def check_notifications(context: ContextTypes.DEFAULT_TYPE):
@@ -2334,6 +3455,12 @@ async def test_morning_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("✅ Рассылка выполнена.")
 
 
+async def test_weekly_reminder_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("🧪 Запускаю напоминание о расписании...")
+    await weekly_planning_reminder(context)
+    await update.message.reply_text("✅ Готово.")
+
+
 # ================== ЗАПУСК ==================
 def main():
     if not Config.TELEGRAM_BOT_TOKEN:
@@ -2344,48 +3471,73 @@ def main():
 
     application.add_handler(CommandHandler('start', start))
     application.add_handler(CommandHandler('test_morning', test_morning_cmd))
+    application.add_handler(CommandHandler('test_weekly', test_weekly_reminder_cmd))
 
-    # Callback-обработчики
-    application.add_handler(CallbackQueryHandler(plan_today_callback, pattern='^plan_(today|tomorrow|week)$'))
-    application.add_handler(CallbackQueryHandler(plan_conflict_callback, pattern='^plan_(replace|keep)$'))
+    # «Моё расписание» — картинка/текст + навигация
+    application.add_handler(CallbackQueryHandler(mysch_view_callback, pattern='^mysch_(text|image)$'))
+    application.add_handler(CallbackQueryHandler(mysch_img_nav_callback, pattern='^mysch_img_(prev|now|next)$'))
+
+    # Неделя / день
+    application.add_handler(CallbackQueryHandler(sched_week_callback, pattern='^sched_(week_|noop)'))
+    application.add_handler(CallbackQueryHandler(sched_day_callback, pattern='^sched_day_'))
+
+    # Действия над задачами (план)
+    application.add_handler(CallbackQueryHandler(sched_tasks_callback, pattern='^sched_tasks_\\d'))
+    application.add_handler(CallbackQueryHandler(sched_tasks_action_callback,
+                                                  pattern='^sched_tasks_(add|replace|clear)$'))
+
+    # Что сделал (факт)
+    application.add_handler(CallbackQueryHandler(sched_note_action_callback,
+                                                  pattern='^sched_note_(add|replace|clear)$'))
+    application.add_handler(CallbackQueryHandler(sched_note_callback, pattern='^sched_note_\\d'))
+
+    # Время / выходной / очистить
+    application.add_handler(CallbackQueryHandler(sched_time_callback, pattern='^sched_time_'))
+    application.add_handler(CallbackQueryHandler(sched_dayoff_callback, pattern='^sched_dayoff_'))
+    application.add_handler(CallbackQueryHandler(sched_clear_callback, pattern='^sched_clear_'))
+    application.add_handler(CallbackQueryHandler(sched_warn_callback, pattern='^sched_warn_'))
+
+    # Конфликты #расписание / #дейли
+    application.add_handler(CallbackQueryHandler(weekly_plan_conflict_callback, pattern='^wplan_'))
+    application.add_handler(CallbackQueryHandler(daily_conflict_callback, pattern='^daily_(replace|keep)$'))
+
+    # Прочие callback
     application.add_handler(CallbackQueryHandler(fact_date_callback, pattern='^fact_(today|yesterday)$'))
     application.add_handler(CallbackQueryHandler(fact_conflict_callback, pattern='^fact_(replace|keep)$'))
     application.add_handler(CallbackQueryHandler(abs_type_callback, pattern='^abs_(vacation|sick|other)$'))
     application.add_handler(CallbackQueryHandler(abs_skip_file_callback, pattern='^abs_skip_file$'))
-    application.add_handler(CallbackQueryHandler(week_callback, pattern='^week_(prev|next|now)$'))
     application.add_handler(CallbackQueryHandler(all_week_callback, pattern='^allweek_'))
-    application.add_handler(CallbackQueryHandler(week_plan_callback, pattern='^week_(full_day|custom|dayoff|skip|cancel)$'))
+    application.add_handler(CallbackQueryHandler(
+        week_plan_callback, pattern='^week_(full_day|custom|dayoff|skip|cancel|overwrite)$'))
     application.add_handler(CallbackQueryHandler(summary_choice_callback, pattern='^sum_(my|all)$'))
     application.add_handler(CallbackQueryHandler(summary_callback, pattern='^(sum_|allsum_)(prev|next|now)$'))
     application.add_handler(CallbackQueryHandler(detach_callback, pattern='^detach_'))
     application.add_handler(CallbackQueryHandler(week_pick_callback, pattern='^week_pick_'))
 
-    # Структурированные сообщения (приоритет выше, чем у коротких)
+    # Группа
     application.add_handler(MessageHandler(
         filters.ChatType.GROUPS & filters.TEXT & ~filters.COMMAND,
         handle_structured_message
     ), group=-2)
-
-    # Короткие команды (#план/#факт/#отпуск)
     application.add_handler(MessageHandler(
         filters.ChatType.GROUPS & filters.TEXT & ~filters.COMMAND,
         group_parser
     ), group=-1)
 
-    # Файлы и фото (для справок)
+    # Личка
     application.add_handler(MessageHandler(filters.Document.ALL | filters.PHOTO, text_router))
-
-    # Все текстовые сообщения
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_router))
 
-    # Уведомления каждые 5 секунд
     application.job_queue.run_repeating(check_notifications, interval=5, first=5)
-
-    # Утренняя рассылка в 8:00 по будням (0=Пн, 1=Вт, 2=Ср, 3=Чт, 4=Пт)
     application.job_queue.run_daily(
         morning_who,
         time=dtime(hour=8, minute=0),
         days=(0, 1, 2, 3, 4)
+    )
+    application.job_queue.run_daily(
+        weekly_planning_reminder,
+        time=dtime(hour=17, minute=0),
+        days=(4,)
     )
 
     print("🤖 Бот запущен. Нажми Ctrl+C для остановки.")
