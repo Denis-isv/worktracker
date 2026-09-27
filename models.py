@@ -37,6 +37,7 @@ class Schedule(db.Model):
     is_day_off = db.Column(db.Boolean, default=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, onupdate=datetime.utcnow)
+    plan_text = db.Column(db.Text)
 
 
 class Attendance(db.Model):
@@ -52,6 +53,7 @@ class Attendance(db.Model):
     early_start = db.Column(db.Integer)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, onupdate=datetime.utcnow)
+    note = db.Column(db.Text)
 
 
 class Absence(db.Model):

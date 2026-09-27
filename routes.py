@@ -45,14 +45,9 @@ def month_ru_filter(month_num):
 
 
 def notify_user(user_id, message):
-    """Создаёт уведомление для сотрудника, если у него есть telegram_chat_id."""
     user = User.query.get(user_id)
     if user and user.telegram_chat_id:
-        notif = Notification(
-            user_id=user.id,
-            chat_id=user.telegram_chat_id,
-            message=message
-        )
+        notif = Notification(user_id=user.id, chat_id=user.telegram_chat_id, message=message)
         db.session.add(notif)
 
 
@@ -62,8 +57,7 @@ def notify_user(user_id, message):
 def index():
     if current_user.role == 'admin':
         return redirect(url_for('admin_dashboard'))
-    else:
-        return redirect(url_for('employee_dashboard'))
+    return redirect(url_for('employee_dashboard'))
 
 
 @app.route('/login', methods=['GET', 'POST'])
@@ -78,8 +72,7 @@ def login():
             login_user(user)
             flash('Вы успешно вошли!', 'success')
             return redirect(url_for('index'))
-        else:
-            flash('Неверный email или пароль', 'danger')
+        flash('Неверный email или пароль', 'danger')
     return render_template('login.html')
 
 
@@ -92,7 +85,6 @@ def logout():
 
 
 # ---------- СОТРУДНИК ----------
-
 @app.route('/employee/dashboard')
 @login_required
 def employee_dashboard():
@@ -119,22 +111,17 @@ def employee_dashboard():
 
     schedules = Schedule.query.filter(
         Schedule.user_id == current_user.id,
-        Schedule.date >= start_date,
-        Schedule.date <= end_date,
+        Schedule.date >= start_date, Schedule.date <= end_date,
         Schedule.status != 'rejected'
     ).all()
-
     attendances = Attendance.query.filter(
         Attendance.user_id == current_user.id,
-        Attendance.date >= start_date,
-        Attendance.date <= end_date,
+        Attendance.date >= start_date, Attendance.date <= end_date,
         Attendance.status != 'rejected'
     ).all()
-
     absences = Absence.query.filter(
         Absence.user_id == current_user.id,
-        Absence.date_start <= end_date,
-        Absence.date_end >= start_date,
+        Absence.date_start <= end_date, Absence.date_end >= start_date,
         Absence.status != 'rejected'
     ).all()
 
@@ -148,19 +135,13 @@ def employee_dashboard():
                 absence_by_day[d.day] = absence
             d += timedelta(days=1)
 
-    cal = calendar.Calendar()
-    month_days = cal.monthdayscalendar(year, month)
+    month_days = calendar.Calendar().monthdayscalendar(year, month)
 
     return render_template(
-        'employee/dashboard.html',
-        user=current_user,
-        year=year,
-        month=month,
+        'employee/dashboard.html', user=current_user, year=year, month=month,
         month_name=MONTHS_RU[month - 1],
-        prev_year=prev_year,
-        prev_month=prev_month,
-        next_year=next_year,
-        next_month=next_month,
+        prev_year=prev_year, prev_month=prev_month,
+        next_year=next_year, next_month=next_month,
         month_days=month_days,
         schedule_by_day=schedule_by_day,
         attendance_by_day=attendance_by_day,
@@ -178,7 +159,6 @@ def employee_history():
 
     view = request.args.get('view', 'month')
     today = date.today()
-
     if view == 'week':
         start_date = today - timedelta(days=today.weekday())
         end_date = start_date + timedelta(days=6)
@@ -191,31 +171,20 @@ def employee_history():
 
     schedules = Schedule.query.filter(
         Schedule.user_id == current_user.id,
-        Schedule.date >= start_date,
-        Schedule.date <= end_date
+        Schedule.date >= start_date, Schedule.date <= end_date
     ).order_by(Schedule.date.desc()).all()
-
     attendances = Attendance.query.filter(
         Attendance.user_id == current_user.id,
-        Attendance.date >= start_date,
-        Attendance.date <= end_date
+        Attendance.date >= start_date, Attendance.date <= end_date
     ).order_by(Attendance.date.desc()).all()
-
     absences = Absence.query.filter(
         Absence.user_id == current_user.id,
-        Absence.date_start <= end_date,
-        Absence.date_end >= start_date
+        Absence.date_start <= end_date, Absence.date_end >= start_date
     ).order_by(Absence.date_start.desc()).all()
 
-    return render_template(
-        'employee/history.html',
-        schedules=schedules,
-        attendances=attendances,
-        absences=absences,
-        view=view,
-        month=today.month,
-        date=date
-    )
+    return render_template('employee/history.html', schedules=schedules,
+                           attendances=attendances, absences=absences,
+                           view=view, month=today.month, date=date)
 
 
 @app.route('/employee/who_works')
@@ -228,8 +197,7 @@ def employee_who_works():
     today = date.today()
     plans_today = Schedule.query.filter_by(date=today, status='approved').all()
     attendances_today = Attendance.query.filter(
-        Attendance.date == today,
-        Attendance.status != 'rejected'
+        Attendance.date == today, Attendance.status != 'rejected'
     ).all()
 
     working_employees = {}
@@ -241,8 +209,8 @@ def employee_who_works():
                 'plan_start': sch.planned_start.strftime('%H:%M') if sch.planned_start else None,
                 'plan_end': sch.planned_end.strftime('%H:%M') if sch.planned_end else None,
                 'is_day_off': sch.is_day_off,
-                'actual_start': None,
-                'actual_end': None
+                'plan_text': sch.plan_text,
+                'actual_start': None, 'actual_end': None
             }
     for att in attendances_today:
         emp = att.user
@@ -251,22 +219,16 @@ def employee_who_works():
         if emp.id in working_employees:
             working_employees[emp.id]['actual_start'] = att.actual_start.strftime('%H:%M') if att.actual_start else None
             working_employees[emp.id]['actual_end'] = att.actual_end.strftime('%H:%M') if att.actual_end else None
-        else:
-            if emp.status == 'active':
-                working_employees[emp.id] = {
-                    'name': emp.full_name,
-                    'plan_start': None,
-                    'plan_end': None,
-                    'is_day_off': False,
-                    'actual_start': att.actual_start.strftime('%H:%M') if att.actual_start else None,
-                    'actual_end': att.actual_end.strftime('%H:%M') if att.actual_end else None
-                }
+        elif emp.status == 'active':
+            working_employees[emp.id] = {
+                'name': emp.full_name, 'plan_start': None, 'plan_end': None,
+                'is_day_off': False, 'plan_text': None,
+                'actual_start': att.actual_start.strftime('%H:%M') if att.actual_start else None,
+                'actual_end': att.actual_end.strftime('%H:%M') if att.actual_end else None
+            }
 
-    return render_template(
-        'employee/who_works.html',
-        today=today,
-        working_employees=working_employees.values()
-    )
+    return render_template('employee/who_works.html', today=today,
+                           working_employees=working_employees.values())
 
 
 @app.route('/employee/weekly_schedule')
@@ -280,7 +242,6 @@ def employee_weekly_schedule():
     today = date.today()
     start_of_week = today - timedelta(days=today.weekday()) + timedelta(weeks=week_offset)
     end_of_week = start_of_week + timedelta(days=6)
-
     employees = User.query.filter_by(role='employee', status='active').all()
 
     days = []
@@ -290,23 +251,17 @@ def employee_weekly_schedule():
         for emp in employees:
             sch = Schedule.query.filter_by(user_id=emp.id, date=day).first()
             att = Attendance.query.filter(
-                Attendance.user_id == emp.id,
-                Attendance.date == day,
+                Attendance.user_id == emp.id, Attendance.date == day,
                 Attendance.status != 'rejected'
             ).first()
             if sch and sch.status == 'rejected':
                 sch = None
             plans[emp.id] = {'schedule': sch, 'attendance': att}
-        days.append({
-            'date': day,
-            'day_name': DAYS_RU[day.weekday()],
-            'plans': plans
-        })
+        days.append({'date': day, 'day_name': DAYS_RU[day.weekday()], 'plans': plans})
 
     month = start_of_week.month
     year = start_of_week.year
-    cal = calendar.Calendar()
-    month_days = cal.monthdayscalendar(year, month)
+    month_days = calendar.Calendar().monthdayscalendar(year, month)
     num_days = calendar.monthrange(year, month)[1]
 
     month_plans = {}
@@ -316,8 +271,7 @@ def employee_weekly_schedule():
         for emp in employees:
             sch = Schedule.query.filter_by(user_id=emp.id, date=d).first()
             att = Attendance.query.filter(
-                Attendance.user_id == emp.id,
-                Attendance.date == d,
+                Attendance.user_id == emp.id, Attendance.date == d,
                 Attendance.status != 'rejected'
             ).first()
             if sch and sch.status == 'rejected':
@@ -327,25 +281,17 @@ def employee_weekly_schedule():
                 'schedule_start': sch.planned_start.strftime('%H:%M') if sch and sch.planned_start else None,
                 'schedule_end': sch.planned_end.strftime('%H:%M') if sch and sch.planned_end else None,
                 'schedule_is_day_off': sch.is_day_off if sch else False,
+                'schedule_plan_text': sch.plan_text if sch else None,
                 'attendance_start': att.actual_start.strftime('%H:%M') if att and att.actual_start else None,
                 'attendance_end': att.actual_end.strftime('%H:%M') if att and att.actual_end else None,
             })
         month_plans[day] = day_plans
 
-    return render_template(
-        'employee/weekly_schedule.html',
-        days=days,
-        employees=employees,
-        start_of_week=start_of_week,
-        end_of_week=end_of_week,
-        week_offset=week_offset,
-        month_days=month_days,
-        month=month,
-        year=year,
-        month_name=MONTHS_RU[month-1],
-        month_plans=month_plans,
-        num_days=num_days
-    )
+    return render_template('employee/weekly_schedule.html', days=days, employees=employees,
+                           start_of_week=start_of_week, end_of_week=end_of_week,
+                           week_offset=week_offset, month_days=month_days, month=month,
+                           year=year, month_name=MONTHS_RU[month-1],
+                           month_plans=month_plans, num_days=num_days)
 
 
 @app.route('/employee/month_summary')
@@ -363,173 +309,113 @@ def employee_month_summary():
     start_date = date(year, month, 1)
     end_date = date(year, month, calendar.monthrange(year, month)[1])
 
-    # === Личные итоги ===
     total_worked_minutes = 0
     total_eff_minutes = 0
     total_late_minutes = 0
 
     attendances = Attendance.query.filter(
         Attendance.user_id == current_user.id,
-        Attendance.date >= start_date,
-        Attendance.date <= end_date,
+        Attendance.date >= start_date, Attendance.date <= end_date,
         Attendance.status != 'rejected'
     ).all()
 
     for att in attendances:
         if att.actual_start and att.actual_end:
             worked = calculate_worked_hours(att.actual_start, att.actual_end)
-            worked_min = int(worked.total_seconds() // 60)
-            eff_min = int(worked_min * att.efficiency)
-            total_worked_minutes += worked_min
-            total_eff_minutes += eff_min
+            wm = int(worked.total_seconds() // 60)
+            total_worked_minutes += wm
+            total_eff_minutes += int(wm * att.efficiency)
             if att.early_start and att.early_start > 0:
                 total_late_minutes += att.early_start
 
-    avg_efficiency = (total_eff_minutes / total_worked_minutes * 100) if total_worked_minutes > 0 else 0
-    final_minutes = total_eff_minutes - total_late_minutes
-
+    avg_eff = (total_eff_minutes / total_worked_minutes * 100) if total_worked_minutes > 0 else 0
     summary = {
         'worked_hours': total_worked_minutes / 60,
-        'avg_efficiency': avg_efficiency,
+        'avg_efficiency': avg_eff,
         'late_hours': total_late_minutes / 60,
-        'final_hours': final_minutes / 60
+        'final_hours': (total_eff_minutes - total_late_minutes) / 60
     }
 
-    # === Общие итоги по всем сотрудникам ===
     employees = User.query.filter_by(role='employee', status='active').all()
     all_summary = []
-    grand_worked = 0
-    grand_eff = 0
-    grand_late = 0
-    grand_final = 0
+    grand_worked = grand_eff = grand_late = grand_final = 0
 
     for emp in employees:
-        emp_worked = 0
-        emp_eff = 0
-        emp_late = 0
-
-        emp_atts = Attendance.query.filter(
+        emp_worked = emp_eff = emp_late = 0
+        for att in Attendance.query.filter(
             Attendance.user_id == emp.id,
-            Attendance.date >= start_date,
-            Attendance.date <= end_date,
+            Attendance.date >= start_date, Attendance.date <= end_date,
             Attendance.status == 'confirmed'
-        ).all()
-
-        for att in emp_atts:
+        ).all():
             if att.actual_start and att.actual_end:
-                worked = calculate_worked_hours(att.actual_start, att.actual_end)
-                wm = int(worked.total_seconds() // 60)
+                w = calculate_worked_hours(att.actual_start, att.actual_end)
+                wm = int(w.total_seconds() // 60)
                 emp_worked += wm
                 emp_eff += int(wm * att.efficiency)
                 if att.early_start and att.early_start > 0:
                     emp_late += att.early_start
-
         emp_avg = (emp_eff / emp_worked * 100) if emp_worked > 0 else 0
-        emp_final = emp_eff - emp_late
-
         all_summary.append({
-            'user': emp,
-            'worked_hours': emp_worked / 60,
-            'avg_efficiency': emp_avg,
-            'late_hours': emp_late / 60,
-            'final_hours': emp_final / 60
+            'user': emp, 'worked_hours': emp_worked / 60,
+            'avg_efficiency': emp_avg, 'late_hours': emp_late / 60,
+            'final_hours': (emp_eff - emp_late) / 60
         })
-
         grand_worked += emp_worked
         grand_eff += emp_eff
         grand_late += emp_late
-        grand_final += emp_final
+        grand_final += (emp_eff - emp_late)
 
     grand_avg = (grand_eff / grand_worked * 100) if grand_worked > 0 else 0
     grand_totals = {
-        'worked_hours': grand_worked / 60,
-        'avg_efficiency': grand_avg,
-        'late_hours': grand_late / 60,
-        'final_hours': grand_final / 60
+        'worked_hours': grand_worked / 60, 'avg_efficiency': grand_avg,
+        'late_hours': grand_late / 60, 'final_hours': grand_final / 60
     }
 
-    return render_template(
-        'employee/month_summary.html',
-        summary=summary,
-        all_summary=all_summary,
-        grand_totals=grand_totals,
-        year=year,
-        month=month,
-        month_name=MONTHS_RU[month - 1]
-    )
+    return render_template('employee/month_summary.html', summary=summary,
+                           all_summary=all_summary, grand_totals=grand_totals,
+                           year=year, month=month, month_name=MONTHS_RU[month - 1])
 
 
+# ---------- ПЛАН / ФАКТ / ОТПУСК ----------
 @app.route('/employee/schedule/add', methods=['GET', 'POST'])
 @login_required
 def employee_schedule_add():
     if current_user.role != 'employee':
         flash('Доступ запрещён', 'danger')
         return redirect(url_for('index'))
-
     default_date = request.args.get('date', '')
     form_data = {}
-
     if request.method == 'POST':
         date_str = request.form.get('date')
         start_str = request.form.get('start')
         end_str = request.form.get('end')
         is_day_off = request.form.get('is_day_off') == 'on'
-        form_data = {
-            'date_str': date_str,
-            'start_str': start_str,
-            'end_str': end_str,
-            'is_day_off': is_day_off
-        }
-
+        form_data = {'date_str': date_str, 'start_str': start_str, 'end_str': end_str, 'is_day_off': is_day_off}
         if not date_str or (not is_day_off and (not start_str or not end_str)):
             flash('Заполните все поля', 'danger')
             return render_template('employee/schedule_add.html', default_date=default_date, form_data=form_data)
-
         try:
             d = datetime.strptime(date_str, '%Y-%m-%d').date()
             if not is_day_off:
-                planned_start = parse_time_string(start_str)
-                planned_end = parse_time_string(end_str)
-                if planned_start >= planned_end:
-                    flash('Время ухода должно быть позже времени прихода', 'danger')
+                ps = parse_time_string(start_str)
+                pe = parse_time_string(end_str)
+                if ps >= pe:
+                    flash('Время ухода должно быть позже прихода', 'danger')
                     return render_template('employee/schedule_add.html', default_date=default_date, form_data=form_data)
             else:
-                planned_start = None
-                planned_end = None
-
-            existing = Schedule.query.filter_by(user_id=current_user.id, date=d).first()
-            if existing:
-                flash('На эту дату уже есть заявка. Удалите или измените её.', 'warning')
+                ps = pe = None
+            if Schedule.query.filter_by(user_id=current_user.id, date=d).first():
+                flash('На эту дату уже есть заявка', 'warning')
                 return redirect(url_for('employee_dashboard'))
-
-            schedule = Schedule(
-                user_id=current_user.id,
-                date=d,
-                planned_start=planned_start,
-                planned_end=planned_end,
-                is_day_off=is_day_off,
-                status='approved'
-            )
-            db.session.add(schedule)
+            s = Schedule(user_id=current_user.id, date=d, planned_start=ps,
+                         planned_end=pe, is_day_off=is_day_off, status='approved')
+            db.session.add(s)
             db.session.commit()
-
-            change = ChangeLog(
-                user_id=current_user.id,
-                target_user_id=current_user.id,
-                field_changed='schedule_add',
-                old_value='',
-                new_value=f'{d} {start_str}-{end_str}'
-            )
-            db.session.add(change)
-            db.session.commit()
-
-            flash('План сохранён (подтверждён автоматически)', 'success')
+            flash('План сохранён', 'success')
             return redirect(url_for('employee_dashboard'))
         except Exception as e:
             db.session.rollback()
             flash(f'Ошибка: {e}', 'danger')
-            return render_template('employee/schedule_add.html', default_date=default_date, form_data=form_data)
-
     return render_template('employee/schedule_add.html', default_date=default_date, form_data=form_data)
 
 
@@ -539,55 +425,44 @@ def employee_schedule_edit(schedule_id):
     if current_user.role != 'employee':
         flash('Доступ запрещён', 'danger')
         return redirect(url_for('index'))
-
     schedule = Schedule.query.get_or_404(schedule_id)
     if schedule.user_id != current_user.id:
         abort(403)
-
     if request.method == 'POST':
         date_str = request.form.get('date')
         start_str = request.form.get('start')
         end_str = request.form.get('end')
         is_day_off = request.form.get('is_day_off') == 'on'
-
         if not date_str or (not is_day_off and (not start_str or not end_str)):
             flash('Заполните все поля', 'danger')
             return redirect(url_for('employee_schedule_edit', schedule_id=schedule.id))
-
         try:
             d = datetime.strptime(date_str, '%Y-%m-%d').date()
             if not is_day_off:
-                planned_start = parse_time_string(start_str)
-                planned_end = parse_time_string(end_str)
-                if planned_start >= planned_end:
-                    flash('Время ухода должно быть позже времени прихода', 'danger')
+                ps = parse_time_string(start_str)
+                pe = parse_time_string(end_str)
+                if ps >= pe:
+                    flash('Время ухода должно быть позже прихода', 'danger')
                     return redirect(url_for('employee_schedule_edit', schedule_id=schedule.id))
             else:
-                planned_start = None
-                planned_end = None
-
+                ps = pe = None
             existing = Schedule.query.filter(
                 Schedule.user_id == current_user.id,
-                Schedule.date == d,
-                Schedule.id != schedule.id
-            ).first()
+                Schedule.date == d, Schedule.id != schedule.id).first()
             if existing:
                 flash('На эту дату уже есть другая заявка.', 'warning')
                 return redirect(url_for('employee_dashboard'))
-
             schedule.date = d
-            schedule.planned_start = planned_start
-            schedule.planned_end = planned_end
+            schedule.planned_start = ps
+            schedule.planned_end = pe
             schedule.is_day_off = is_day_off
             schedule.status = 'approved'
-
             db.session.commit()
             flash('План обновлён', 'success')
             return redirect(url_for('employee_dashboard'))
         except Exception as e:
             db.session.rollback()
             flash(f'Ошибка: {e}', 'danger')
-
     return render_template('employee/schedule_edit.html', schedule=schedule)
 
 
@@ -597,11 +472,9 @@ def employee_schedule_delete(schedule_id):
     if current_user.role != 'employee':
         flash('Доступ запрещён', 'danger')
         return redirect(url_for('index'))
-
     schedule = Schedule.query.get_or_404(schedule_id)
     if schedule.user_id != current_user.id:
         abort(403)
-
     db.session.delete(schedule)
     db.session.commit()
     flash('План удалён', 'success')
@@ -614,92 +487,51 @@ def employee_attendance_add():
     if current_user.role != 'employee':
         flash('Доступ запрещён', 'danger')
         return redirect(url_for('index'))
-
     default_date = request.args.get('date', date.today().isoformat())
     today = date.today()
     form_data = {}
-
     if request.method == 'POST':
         date_str = request.form.get('date')
         start_str = request.form.get('start')
         end_str = request.form.get('end')
         efficiency_str = request.form.get('efficiency')
-        form_data = {
-            'date_str': date_str,
-            'start_str': start_str,
-            'end_str': end_str,
-            'efficiency_str': efficiency_str
-        }
-
+        form_data = {'date_str': date_str, 'start_str': start_str, 'end_str': end_str, 'efficiency_str': efficiency_str}
         if not date_str or not start_str or not end_str or not efficiency_str:
             flash('Заполните все поля', 'danger')
             return render_template('employee/attendance_add.html', today=today.isoformat(), default_date=default_date, form_data=form_data)
-
         try:
             d = datetime.strptime(date_str, '%Y-%m-%d').date()
-            actual_start = parse_time_string(start_str)
-            actual_end = parse_time_string(end_str)
-            efficiency = float(efficiency_str) / 100
-
+            as_ = parse_time_string(start_str)
+            ae = parse_time_string(end_str)
+            eff = float(efficiency_str) / 100
             if d > today:
-                flash('Нельзя отмечать фактическое время на будущую дату', 'danger')
+                flash('Нельзя на будущую дату', 'danger')
                 return render_template('employee/attendance_add.html', today=today.isoformat(), default_date=default_date, form_data=form_data)
-
-            if actual_start >= actual_end:
-                flash('Время ухода должно быть позже времени прихода', 'danger')
+            if as_ >= ae:
+                flash('Время ухода должно быть позже', 'danger')
                 return render_template('employee/attendance_add.html', today=today.isoformat(), default_date=default_date, form_data=form_data)
-
-            existing = Attendance.query.filter_by(user_id=current_user.id, date=d).first()
-            if existing:
-                flash('На эту дату уже есть фактическая отметка', 'warning')
+            if Attendance.query.filter_by(user_id=current_user.id, date=d).first():
+                flash('На эту дату уже есть отметка', 'warning')
                 return redirect(url_for('employee_dashboard'))
-
-            early_start = 0
-            schedule = Schedule.query.filter_by(
-                user_id=current_user.id,
-                date=d,
-                status='approved'
-            ).first()
-            if schedule and schedule.planned_start:
-                planned_minutes = time_to_minutes(schedule.planned_start)
-                actual_minutes = time_to_minutes(actual_start)
-                early_start = actual_minutes - planned_minutes
-
+            early = 0
+            sch = Schedule.query.filter_by(user_id=current_user.id, date=d, status='approved').first()
+            if sch and sch.planned_start:
+                early = time_to_minutes(as_) - time_to_minutes(sch.planned_start)
             status = 'confirmed' if d == today else 'pending'
-
-            attendance = Attendance(
-                user_id=current_user.id,
-                date=d,
-                actual_start=actual_start,
-                actual_end=actual_end,
-                efficiency=efficiency,
-                early_start=early_start,
-                status=status
-            )
-            db.session.add(attendance)
+            a = Attendance(user_id=current_user.id, date=d, actual_start=as_,
+                           actual_end=ae, efficiency=eff, early_start=early, status=status)
+            db.session.add(a)
             db.session.commit()
-
-            change = ChangeLog(
-                user_id=current_user.id,
-                target_user_id=current_user.id,
-                field_changed='attendance_add',
-                old_value='',
-                new_value=f'{d} {start_str}-{end_str} eff={efficiency_str}%'
-            )
-            db.session.add(change)
-            db.session.commit()
-
             if status == 'pending':
-                flash('Фактическое время сохранено и ожидает подтверждения администратора', 'warning')
+                flash('Факт сохранён и ждёт подтверждения', 'warning')
             else:
-                flash('Фактическое время записано', 'success')
+                flash('Факт записан', 'success')
             return redirect(url_for('employee_dashboard'))
         except Exception as e:
             db.session.rollback()
             flash(f'Ошибка: {e}', 'danger')
-            return render_template('employee/attendance_add.html', today=today.isoformat(), default_date=default_date, form_data=form_data)
-
-    return render_template('employee/attendance_add.html', today=today.isoformat(), default_date=default_date, form_data=form_data)
+    return render_template('employee/attendance_add.html', today=today.isoformat(),
+                           default_date=default_date, form_data=form_data)
 
 
 @app.route('/employee/attendance/<int:attendance_id>/edit', methods=['GET', 'POST'])
@@ -708,75 +540,44 @@ def employee_attendance_edit(attendance_id):
     if current_user.role != 'employee':
         flash('Доступ запрещён', 'danger')
         return redirect(url_for('index'))
-
-    attendance = Attendance.query.get_or_404(attendance_id)
-    if attendance.user_id != current_user.id:
+    att = Attendance.query.get_or_404(attendance_id)
+    if att.user_id != current_user.id:
         abort(403)
-
     if request.method == 'POST':
         start_str = request.form.get('start')
         end_str = request.form.get('end')
         efficiency_str = request.form.get('efficiency')
-
         if not start_str or not end_str or not efficiency_str:
             flash('Заполните все поля', 'danger')
-            return redirect(url_for('employee_attendance_edit', attendance_id=attendance.id))
-
+            return redirect(url_for('employee_attendance_edit', attendance_id=att.id))
         try:
-            actual_start = parse_time_string(start_str)
-            actual_end = parse_time_string(end_str)
-            efficiency = float(efficiency_str) / 100
-
-            if actual_start >= actual_end:
-                flash('Время ухода должно быть позже времени прихода', 'danger')
-                return redirect(url_for('employee_attendance_edit', attendance_id=attendance.id))
-
-            schedule = Schedule.query.filter_by(
-                user_id=current_user.id,
-                date=attendance.date,
-                status='approved'
-            ).first()
-            early_start = 0
-            if schedule and schedule.planned_start:
-                planned_minutes = time_to_minutes(schedule.planned_start)
-                actual_minutes = time_to_minutes(actual_start)
-                early_start = actual_minutes - planned_minutes
-
-            attendance.actual_start = actual_start
-            attendance.actual_end = actual_end
-            attendance.efficiency = efficiency
-            attendance.early_start = early_start
-
-            if attendance.date < date.today():
-                attendance.status = 'pending'
-                flash_message = 'Изменения сохранены и ожидают подтверждения администратора'
+            as_ = parse_time_string(start_str)
+            ae = parse_time_string(end_str)
+            eff = float(efficiency_str) / 100
+            if as_ >= ae:
+                flash('Время ухода должно быть позже', 'danger')
+                return redirect(url_for('employee_attendance_edit', attendance_id=att.id))
+            sch = Schedule.query.filter_by(user_id=current_user.id, date=att.date, status='approved').first()
+            early = 0
+            if sch and sch.planned_start:
+                early = time_to_minutes(as_) - time_to_minutes(sch.planned_start)
+            att.actual_start = as_
+            att.actual_end = ae
+            att.efficiency = eff
+            att.early_start = early
+            if att.date < date.today():
+                att.status = 'pending'
+                msg = 'Изменения сохранены и ждут подтверждения'
             else:
-                attendance.status = 'confirmed'
-                flash_message = 'Отметка обновлена'
-
+                att.status = 'confirmed'
+                msg = 'Отметка обновлена'
             db.session.commit()
-
-            change = ChangeLog(
-                user_id=current_user.id,
-                target_user_id=current_user.id,
-                field_changed='attendance_edit',
-                old_value='',
-                new_value=f'{attendance.date} {start_str}-{end_str} eff={efficiency_str}%'
-            )
-            db.session.add(change)
-            db.session.commit()
-
-            flash(flash_message, 'success' if attendance.status == 'confirmed' else 'warning')
+            flash(msg, 'success')
             return redirect(url_for('employee_history'))
         except Exception as e:
             db.session.rollback()
             flash(f'Ошибка: {e}', 'danger')
-
-    return render_template(
-        'employee/attendance_edit.html',
-        attendance=attendance,
-        today=date.today().isoformat()
-    )
+    return render_template('employee/attendance_edit.html', attendance=att, today=date.today().isoformat())
 
 
 @app.route('/employee/absence/add', methods=['GET', 'POST'])
@@ -785,15 +586,12 @@ def employee_absence_add():
     if current_user.role != 'employee':
         flash('Доступ запрещён', 'danger')
         return redirect(url_for('index'))
-
     today = date.today()
     year = request.args.get('year', today.year, type=int)
     month = request.args.get('month', today.month, type=int)
     if month < 1 or month > 12:
         month = today.month
-
     month_days = calendar.Calendar().monthdayscalendar(year, month)
-
     if month == 1:
         prev_year, prev_month = year - 1, 12
     else:
@@ -810,41 +608,29 @@ def employee_absence_add():
         absence_type = request.form.get('type')
         custom_type = request.form.get('custom_type', '').strip()
         file = request.files.get('file')
-
-        form_data = {
-            'date_start_str': date_start_str,
-            'date_end_str': date_end_str,
-            'absence_type': absence_type,
-            'custom_type': custom_type
-        }
-
+        form_data = {'date_start_str': date_start_str, 'date_end_str': date_end_str,
+                     'absence_type': absence_type, 'custom_type': custom_type}
         if not date_start_str or not date_end_str or not absence_type:
             flash('Заполните все поля', 'danger')
-            return render_template('employee/absence_add.html',
-                                   form_data=form_data, year=year, month=month,
-                                   month_days=month_days, month_name=MONTHS_RU[month-1],
-                                   prev_year=prev_year, prev_month=prev_month,
-                                   next_year=next_year, next_month=next_month)
-
+            return render_template('employee/absence_add.html', form_data=form_data,
+                                   year=year, month=month, month_days=month_days,
+                                   month_name=MONTHS_RU[month-1], prev_year=prev_year,
+                                   prev_month=prev_month, next_year=next_year, next_month=next_month)
         if absence_type == 'other' and not custom_type:
-            flash('Укажите, что именно (например, «отгул», «учёба»)', 'danger')
-            return render_template('employee/absence_add.html',
-                                   form_data=form_data, year=year, month=month,
-                                   month_days=month_days, month_name=MONTHS_RU[month-1],
-                                   prev_year=prev_year, prev_month=prev_month,
-                                   next_year=next_year, next_month=next_month)
-
+            flash('Укажите, что именно', 'danger')
+            return render_template('employee/absence_add.html', form_data=form_data,
+                                   year=year, month=month, month_days=month_days,
+                                   month_name=MONTHS_RU[month-1], prev_year=prev_year,
+                                   prev_month=prev_month, next_year=next_year, next_month=next_month)
         try:
             date_start = datetime.strptime(date_start_str, '%Y-%m-%d').date()
             date_end = datetime.strptime(date_end_str, '%Y-%m-%d').date()
             if date_start > date_end:
-                flash('Дата начала позже даты окончания', 'danger')
-                return render_template('employee/absence_add.html',
-                                       form_data=form_data, year=year, month=month,
-                                       month_days=month_days, month_name=MONTHS_RU[month-1],
-                                       prev_year=prev_year, prev_month=prev_month,
-                                       next_year=next_year, next_month=next_month)
-
+                flash('Дата начала позже окончания', 'danger')
+                return render_template('employee/absence_add.html', form_data=form_data,
+                                       year=year, month=month, month_days=month_days,
+                                       month_name=MONTHS_RU[month-1], prev_year=prev_year,
+                                       prev_month=prev_month, next_year=next_year, next_month=next_month)
             file_path = None
             if file:
                 upload_folder = os.path.join(app.root_path, 'static', 'uploads')
@@ -853,55 +639,35 @@ def employee_absence_add():
                 file.save(os.path.join(upload_folder, filename))
                 file_path = f'uploads/{filename}'
 
-            absence = Absence(
-                user_id=current_user.id,
-                date_start=date_start,
-                date_end=date_end,
-                type=absence_type,
-                custom_type=custom_type if absence_type == 'other' else None,
-                status='pending',
-                file_path=file_path
-            )
+            absence = Absence(user_id=current_user.id, date_start=date_start,
+                              date_end=date_end, type=absence_type,
+                              custom_type=custom_type if absence_type == 'other' else None,
+                              status='pending', file_path=file_path)
             db.session.add(absence)
             db.session.commit()
 
-            # Уведомления админам
             admins = User.query.filter_by(role='admin').all()
             type_map = {'vacation': 'отпуск', 'sick': 'больничный', 'other': 'другое'}
             type_ru = type_map.get(absence_type, absence_type)
             if absence_type == 'other' and custom_type:
                 type_ru = custom_type
-
             for admin in admins:
                 if admin.telegram_chat_id:
-                    notif = Notification(
-                        user_id=admin.id,
-                        chat_id=admin.telegram_chat_id,
-                        message=f"📩 {current_user.full_name} — заявка на {type_ru}: {date_start.strftime('%d.%m.%Y')} – {date_end.strftime('%d.%m.%Y')}"
-                    )
-                    db.session.add(notif)
+                    db.session.add(Notification(
+                        user_id=admin.id, chat_id=admin.telegram_chat_id,
+                        message=f"📩 {current_user.full_name} — заявка на {type_ru}: "
+                                f"{date_start.strftime('%d.%m.%Y')} – {date_end.strftime('%d.%m.%Y')}"
+                    ))
             db.session.commit()
-
-            change = ChangeLog(
-                user_id=current_user.id,
-                target_user_id=current_user.id,
-                field_changed='absence_add',
-                old_value='',
-                new_value=f'{date_start} - {date_end} ({absence_type})'
-            )
-            db.session.add(change)
-            db.session.commit()
-
             flash('Заявка отправлена', 'success')
             return redirect(url_for('employee_dashboard'))
         except Exception as e:
             db.session.rollback()
             flash(f'Ошибка: {e}', 'danger')
-            return render_template('employee/absence_add.html',
-                                   form_data=form_data, year=year, month=month,
-                                   month_days=month_days, month_name=MONTHS_RU[month-1],
-                                   prev_year=prev_year, prev_month=prev_month,
-                                   next_year=next_year, next_month=next_month)
+            return render_template('employee/absence_add.html', form_data=form_data,
+                                   year=year, month=month, month_days=month_days,
+                                   month_name=MONTHS_RU[month-1], prev_year=prev_year,
+                                   prev_month=prev_month, next_year=next_year, next_month=next_month)
 
     form_data = {
         'date_start_str': request.args.get('date_start', ''),
@@ -909,11 +675,10 @@ def employee_absence_add():
         'absence_type': request.args.get('type', ''),
         'custom_type': ''
     }
-    return render_template('employee/absence_add.html',
-                           form_data=form_data, year=year, month=month,
-                           month_days=month_days, month_name=MONTHS_RU[month-1],
-                           prev_year=prev_year, prev_month=prev_month,
-                           next_year=next_year, next_month=next_month)
+    return render_template('employee/absence_add.html', form_data=form_data,
+                           year=year, month=month, month_days=month_days,
+                           month_name=MONTHS_RU[month-1], prev_year=prev_year,
+                           prev_month=prev_month, next_year=next_year, next_month=next_month)
 
 
 @app.route('/employee/absence/<int:absence_id>/edit', methods=['GET', 'POST'])
@@ -922,22 +687,17 @@ def employee_absence_edit(absence_id):
     if current_user.role != 'employee':
         flash('Доступ запрещён', 'danger')
         return redirect(url_for('index'))
-
     absence = Absence.query.get_or_404(absence_id)
     if absence.user_id != current_user.id:
         abort(403)
-
     today = date.today()
     default_year = absence.date_start.year if absence.date_start else today.year
     default_month = absence.date_start.month if absence.date_start else today.month
-
     year = request.args.get('year', default_year, type=int)
     month = request.args.get('month', default_month, type=int)
     if month < 1 or month > 12:
         month = today.month
-
     month_days = calendar.Calendar().monthdayscalendar(year, month)
-
     if month == 1:
         prev_year, prev_month = year - 1, 12
     else:
@@ -953,20 +713,17 @@ def employee_absence_edit(absence_id):
         absence_type = request.form.get('type')
         custom_type = request.form.get('custom_type', '').strip()
         file = request.files.get('file')
-
         if not date_start_str or not date_end_str or not absence_type:
             flash('Заполните все поля', 'danger')
             return redirect(url_for('employee_absence_edit', absence_id=absence.id,
                                     year=year, month=month))
-
         try:
             date_start = datetime.strptime(date_start_str, '%Y-%m-%d').date()
             date_end = datetime.strptime(date_end_str, '%Y-%m-%d').date()
             if date_start > date_end:
-                flash('Дата начала позже даты окончания', 'danger')
+                flash('Дата начала позже окончания', 'danger')
                 return redirect(url_for('employee_absence_edit', absence_id=absence.id,
                                         year=year, month=month))
-
             file_path = absence.file_path
             if file:
                 upload_folder = os.path.join(app.root_path, 'static', 'uploads')
@@ -974,46 +731,25 @@ def employee_absence_edit(absence_id):
                 filename = f"{current_user.id}_{date_start}_{date_end}_{file.filename}"
                 file.save(os.path.join(upload_folder, filename))
                 file_path = f'uploads/{filename}'
-
             absence.date_start = date_start
             absence.date_end = date_end
             absence.type = absence_type
             absence.custom_type = custom_type if absence_type == 'other' else None
             absence.file_path = file_path
             absence.status = 'pending'
-
             db.session.commit()
-
-            change = ChangeLog(
-                user_id=current_user.id,
-                target_user_id=current_user.id,
-                field_changed='absence_edit',
-                old_value='',
-                new_value=f'{date_start} - {date_end} ({absence_type})'
-            )
-            db.session.add(change)
-            db.session.commit()
-
-            flash('Заявка обновлена и отправлена на подтверждение', 'success')
+            flash('Заявка обновлена и отправлена', 'success')
             return redirect(url_for('employee_history'))
         except Exception as e:
             db.session.rollback()
             flash(f'Ошибка: {e}', 'danger')
 
-    return render_template(
-        'employee/absence_edit.html',
-        absence=absence,
-        year=year,
-        month=month,
-        month_days=month_days,
-        month_name=MONTHS_RU[month-1],
-        prev_year=prev_year,
-        prev_month=prev_month,
-        next_year=next_year,
-        next_month=next_month,
-        selected_start=absence.date_start.isoformat() if absence.date_start else '',
-        selected_end=absence.date_end.isoformat() if absence.date_end else ''
-    )
+    return render_template('employee/absence_edit.html', absence=absence,
+                           year=year, month=month, month_days=month_days,
+                           month_name=MONTHS_RU[month-1], prev_year=prev_year,
+                           prev_month=prev_month, next_year=next_year, next_month=next_month,
+                           selected_start=absence.date_start.isoformat() if absence.date_start else '',
+                           selected_end=absence.date_end.isoformat() if absence.date_end else '')
 
 
 @app.route('/employee/absence/<int:absence_id>/request_delete', methods=['POST'])
@@ -1026,11 +762,11 @@ def employee_absence_request_delete(absence_id):
     if absence.user_id != current_user.id:
         abort(403)
     if absence.status == 'pending_deletion':
-        flash('Запрос на удаление уже отправлен', 'warning')
+        flash('Запрос уже отправлен', 'warning')
     else:
         absence.status = 'pending_deletion'
         db.session.commit()
-        flash('Запрос на удаление отправлен администратору', 'warning')
+        flash('Запрос на удаление отправлен', 'warning')
     return redirect(url_for('employee_history'))
 
 
@@ -1040,30 +776,23 @@ def employee_day_edit():
     if current_user.role != 'employee':
         flash('Доступ запрещён', 'danger')
         return redirect(url_for('index'))
-
     date_str = request.args.get('date')
     if not date_str:
         flash('Не указана дата', 'danger')
         return redirect(url_for('employee_dashboard'))
-
     try:
         current_date = datetime.strptime(date_str, '%Y-%m-%d').date()
     except ValueError:
         flash('Некорректная дата', 'danger')
         return redirect(url_for('employee_dashboard'))
-
     is_future = current_date > date.today()
-
     schedule = Schedule.query.filter_by(user_id=current_user.id, date=current_date).first()
     attendance = Attendance.query.filter_by(user_id=current_user.id, date=current_date).first()
-
     absence = Absence.query.filter(
         Absence.user_id == current_user.id,
-        Absence.date_start <= current_date,
-        Absence.date_end >= current_date,
+        Absence.date_start <= current_date, Absence.date_end >= current_date,
         Absence.status == 'approved'
     ).first()
-
     if request.method == 'POST':
         is_day_off = request.form.get('is_day_off') == 'on'
         plan_start_str = request.form.get('plan_start')
@@ -1071,141 +800,90 @@ def employee_day_edit():
         actual_start_str = request.form.get('actual_start')
         actual_end_str = request.form.get('actual_end')
         efficiency_str = request.form.get('efficiency')
-
+        plan_text = request.form.get('plan_text', '').strip() or None
         if is_future:
-            actual_start_str = None
-            actual_end_str = None
-            efficiency_str = None
-
+            actual_start_str = actual_end_str = efficiency_str = None
         error_message = None
         if not is_day_off and (not plan_start_str or not plan_end_str):
             error_message = 'Заполните время плана или отметьте выходной'
         elif actual_start_str and actual_end_str:
-            actual_start = parse_time_string(actual_start_str)
-            actual_end = parse_time_string(actual_end_str)
-            if actual_start >= actual_end:
-                error_message = 'Время ухода должно быть позже времени прихода'
+            as_ = parse_time_string(actual_start_str)
+            ae = parse_time_string(actual_end_str)
+            if as_ >= ae:
+                error_message = 'Время ухода должно быть позже прихода'
         elif (actual_start_str and not actual_end_str) or (not actual_start_str and actual_end_str):
             error_message = 'Заполните оба фактических времени'
-
         if error_message:
             flash(error_message, 'danger')
-            form_data = {
-                'is_day_off': is_day_off,
-                'plan_start_str': plan_start_str,
-                'plan_end_str': plan_end_str,
-                'actual_start_str': actual_start_str,
-                'actual_end_str': actual_end_str,
-                'efficiency_str': efficiency_str
-            }
-            return render_template(
-                'employee/day_edit.html',
-                current_date=current_date,
-                schedule=schedule,
-                attendance=attendance,
-                is_future=is_future,
-                absence=absence,
-                form_data=form_data,
-                error_message=error_message
-            )
-
-        planned_start = parse_time_string(plan_start_str) if not is_day_off and plan_start_str else None
-        planned_end = parse_time_string(plan_end_str) if not is_day_off and plan_end_str else None
-
-        actual_start = None
-        actual_end = None
-        efficiency = 1.0
+            form_data = {'is_day_off': is_day_off, 'plan_start_str': plan_start_str,
+                         'plan_end_str': plan_end_str, 'actual_start_str': actual_start_str,
+                         'actual_end_str': actual_end_str, 'efficiency_str': efficiency_str,
+                         'plan_text': plan_text}
+            return render_template('employee/day_edit.html', current_date=current_date,
+                                   schedule=schedule, attendance=attendance,
+                                   is_future=is_future, absence=absence,
+                                   form_data=form_data, error_message=error_message)
+        ps = parse_time_string(plan_start_str) if not is_day_off and plan_start_str else None
+        pe = parse_time_string(plan_end_str) if not is_day_off and plan_end_str else None
+        as_ = ae = None
+        eff = 1.0
         if not is_future and actual_start_str and actual_end_str:
-            actual_start = parse_time_string(actual_start_str)
-            actual_end = parse_time_string(actual_end_str)
+            as_ = parse_time_string(actual_start_str)
+            ae = parse_time_string(actual_end_str)
             if efficiency_str:
-                efficiency = float(efficiency_str) / 100
-
+                eff = float(efficiency_str) / 100
         plan_status = 'pending' if absence else 'approved'
-        attendance_status = 'pending' if absence or (not is_future and current_date < date.today()) else 'confirmed'
-
+        att_status = 'pending' if absence or (not is_future and current_date < date.today()) else 'confirmed'
         if schedule:
             schedule.is_day_off = is_day_off
-            schedule.planned_start = planned_start
-            schedule.planned_end = planned_end
+            schedule.planned_start = ps
+            schedule.planned_end = pe
+            schedule.plan_text = plan_text
             schedule.status = plan_status
         else:
-            schedule = Schedule(
-                user_id=current_user.id,
-                date=current_date,
-                planned_start=planned_start,
-                planned_end=planned_end,
-                is_day_off=is_day_off,
-                status=plan_status
-            )
+            schedule = Schedule(user_id=current_user.id, date=current_date,
+                                planned_start=ps, planned_end=pe,
+                                is_day_off=is_day_off, status=plan_status,
+                                plan_text=plan_text)
             db.session.add(schedule)
-
-        if not is_future and actual_start and actual_end:
-            early_start = 0
+        if not is_future and as_ and ae:
+            early = 0
             if schedule and schedule.planned_start and not schedule.is_day_off:
-                planned_minutes = time_to_minutes(schedule.planned_start)
-                actual_minutes = time_to_minutes(actual_start)
-                early_start = actual_minutes - planned_minutes
-
+                early = time_to_minutes(as_) - time_to_minutes(schedule.planned_start)
             if attendance:
-                attendance.actual_start = actual_start
-                attendance.actual_end = actual_end
-                attendance.efficiency = efficiency
-                attendance.early_start = early_start
-                attendance.status = attendance_status
+                attendance.actual_start = as_
+                attendance.actual_end = ae
+                attendance.efficiency = eff
+                attendance.early_start = early
+                attendance.status = att_status
             else:
-                attendance = Attendance(
-                    user_id=current_user.id,
-                    date=current_date,
-                    actual_start=actual_start,
-                    actual_end=actual_end,
-                    efficiency=efficiency,
-                    early_start=early_start,
-                    status=attendance_status
-                )
+                attendance = Attendance(user_id=current_user.id, date=current_date,
+                                        actual_start=as_, actual_end=ae, efficiency=eff,
+                                        early_start=early, status=att_status)
                 db.session.add(attendance)
         elif attendance and not is_future:
             db.session.delete(attendance)
         elif is_future and attendance:
             db.session.delete(attendance)
-
         db.session.commit()
-
-        change = ChangeLog(
-            user_id=current_user.id,
-            target_user_id=current_user.id,
-            field_changed='day_edit',
-            old_value='',
-            new_value=f'{current_date} plan={plan_start_str}-{plan_end_str}, fact={actual_start_str}-{actual_end_str}'
-        )
-        db.session.add(change)
-        db.session.commit()
-
-        if attendance_status == 'pending' or plan_status == 'pending':
-            flash('Данные сохранены и ожидают подтверждения администратора', 'warning')
+        if att_status == 'pending' or plan_status == 'pending':
+            flash('Сохранено и ждёт подтверждения', 'warning')
         else:
             flash('Данные сохранены', 'success')
         return redirect(url_for('employee_dashboard', year=current_date.year, month=current_date.month))
-
     form_data = {
         'is_day_off': schedule.is_day_off if schedule else False,
         'plan_start_str': schedule.planned_start.strftime('%H:%M') if schedule and schedule.planned_start else '',
         'plan_end_str': schedule.planned_end.strftime('%H:%M') if schedule and schedule.planned_end else '',
         'actual_start_str': attendance.actual_start.strftime('%H:%M') if attendance and attendance.actual_start else '',
         'actual_end_str': attendance.actual_end.strftime('%H:%M') if attendance and attendance.actual_end else '',
-        'efficiency_str': str(int(attendance.efficiency * 100)) if attendance and attendance.efficiency else '100'
+        'efficiency_str': str(int(attendance.efficiency * 100)) if attendance and attendance.efficiency else '100',
+        'plan_text': schedule.plan_text if schedule else ''
     }
-
-    return render_template(
-        'employee/day_edit.html',
-        current_date=current_date,
-        schedule=schedule,
-        attendance=attendance,
-        is_future=is_future,
-        absence=absence,
-        form_data=form_data,
-        error_message=None
-    )
+    return render_template('employee/day_edit.html', current_date=current_date,
+                           schedule=schedule, attendance=attendance,
+                           is_future=is_future, absence=absence,
+                           form_data=form_data, error_message=None)
 
 
 @app.route('/employee/day_clear/<string:date_str>', methods=['POST'])
@@ -1214,17 +892,14 @@ def employee_day_clear(date_str):
     if current_user.role != 'employee':
         flash('Доступ запрещён', 'danger')
         return redirect(url_for('index'))
-
     try:
         d = datetime.strptime(date_str, '%Y-%m-%d').date()
     except ValueError:
         flash('Некорректная дата', 'danger')
         return redirect(url_for('employee_dashboard'))
-
     Schedule.query.filter_by(user_id=current_user.id, date=d).delete()
     Attendance.query.filter_by(user_id=current_user.id, date=d).delete()
     db.session.commit()
-
     flash(f'Данные за {d.strftime("%d.%m.%Y")} удалены', 'success')
     return redirect(url_for('employee_dashboard', year=d.year, month=d.month))
 
@@ -1235,59 +910,34 @@ def employee_clear_history():
     if current_user.role != 'employee':
         flash('Доступ запрещён', 'danger')
         return redirect(url_for('index'))
-
     today = date.today()
     start_of_week = today - timedelta(days=today.weekday())
-
-    Schedule.query.filter(
-        Schedule.user_id == current_user.id,
-        Schedule.date < start_of_week
-    ).delete()
-    Attendance.query.filter(
-        Attendance.user_id == current_user.id,
-        Attendance.date < start_of_week
-    ).delete()
-    Absence.query.filter(
-        Absence.user_id == current_user.id,
-        Absence.date_end < start_of_week
-    ).delete()
-
+    Schedule.query.filter(Schedule.user_id == current_user.id, Schedule.date < start_of_week).delete()
+    Attendance.query.filter(Attendance.user_id == current_user.id, Attendance.date < start_of_week).delete()
+    Absence.query.filter(Absence.user_id == current_user.id, Absence.date_end < start_of_week).delete()
     db.session.commit()
-
-    flash('История очищена (данные текущей недели сохранены)', 'success')
+    flash('История очищена', 'success')
     return redirect(url_for('employee_history'))
 
 
 # ---------- АДМИНИСТРАТОР ----------
-
 @app.route('/admin/dashboard')
 @login_required
 def admin_dashboard():
     if current_user.role != 'admin':
         flash('Доступ запрещён', 'danger')
         return redirect(url_for('index'))
-
     pending_schedules = Schedule.query.filter_by(status='pending').count()
     pending_absences = Absence.query.filter_by(status='pending').count()
     pending_attendances = Attendance.query.filter_by(status='pending').count()
     total_pending = pending_schedules + pending_absences + pending_attendances
-
     today = date.today()
     today_plans = Schedule.query.filter_by(date=today, status='approved').all()
-    today_attendance = Attendance.query.filter(
-        Attendance.date == today,
-        Attendance.status != 'rejected'
-    ).all()
-
-    return render_template(
-        'admin/admin_dashboard.html',
-        pending_schedules=pending_schedules,
-        pending_absences=pending_absences,
-        pending_attendances=pending_attendances,
-        total_pending=total_pending,
-        today_plans=today_plans,
-        today_attendance=today_attendance
-    )
+    today_attendance = Attendance.query.filter(Attendance.date == today, Attendance.status != 'rejected').all()
+    return render_template('admin/admin_dashboard.html',
+                           pending_schedules=pending_schedules, pending_absences=pending_absences,
+                           pending_attendances=pending_attendances, total_pending=total_pending,
+                           today_plans=today_plans, today_attendance=today_attendance)
 
 
 @app.route('/admin/pending_requests')
@@ -1296,15 +946,12 @@ def admin_pending_requests():
     if current_user.role != 'admin':
         flash('Доступ запрещён', 'danger')
         return redirect(url_for('index'))
-
     today = date.today()
     cal_year = request.args.get('cal_year', today.year, type=int)
     cal_month = request.args.get('cal_month', today.month, type=int)
     if cal_month < 1 or cal_month > 12:
         cal_month = today.month
-
     show_all = request.args.get('show_all', '0') == '1'
-
     first_day = date(cal_year, cal_month, 1)
     last_day = date(cal_year, cal_month, calendar.monthrange(cal_year, cal_month)[1])
 
@@ -1314,47 +961,26 @@ def admin_pending_requests():
         pending_absences = Absence.query.filter_by(status='pending').order_by(Absence.date_start).all()
         pending_deletion_absences = Absence.query.filter_by(status='pending_deletion').order_by(Absence.date_start).all()
     else:
-        pending_schedules = Schedule.query.filter(
-            Schedule.status == 'pending',
-            Schedule.date >= first_day,
-            Schedule.date <= last_day
-        ).order_by(Schedule.date).all()
-
-        pending_attendances = Attendance.query.filter(
-            Attendance.status == 'pending',
-            Attendance.date >= first_day,
-            Attendance.date <= last_day
-        ).order_by(Attendance.date).all()
-
-        pending_absences = Absence.query.filter(
-            Absence.status == 'pending',
-            Absence.date_start <= last_day,
-            Absence.date_end >= first_day
-        ).order_by(Absence.date_start).all()
-
-        pending_deletion_absences = Absence.query.filter(
-            Absence.status == 'pending_deletion',
-            Absence.date_start <= last_day,
-            Absence.date_end >= first_day
-        ).order_by(Absence.date_start).all()
+        pending_schedules = Schedule.query.filter(Schedule.status == 'pending',
+                                                   Schedule.date >= first_day, Schedule.date <= last_day).order_by(Schedule.date).all()
+        pending_attendances = Attendance.query.filter(Attendance.status == 'pending',
+                                                       Attendance.date >= first_day, Attendance.date <= last_day).order_by(Attendance.date).all()
+        pending_absences = Absence.query.filter(Absence.status == 'pending',
+                                                 Absence.date_start <= last_day, Absence.date_end >= first_day).order_by(Absence.date_start).all()
+        pending_deletion_absences = Absence.query.filter(Absence.status == 'pending_deletion',
+                                                          Absence.date_start <= last_day, Absence.date_end >= first_day).order_by(Absence.date_start).all()
 
     month_days = calendar.Calendar().monthdayscalendar(cal_year, cal_month)
-
     days_with_requests = {}
-    all_pending_schedules = Schedule.query.filter_by(status='pending').all()
-    all_pending_attendances = Attendance.query.filter_by(status='pending').all()
-    all_pending_absences = Absence.query.filter_by(status='pending').all()
-    all_pending_deletions = Absence.query.filter_by(status='pending_deletion').all()
-
-    for s in all_pending_schedules:
+    for s in Schedule.query.filter_by(status='pending').all():
         if s.date.year == cal_year and s.date.month == cal_month:
             d = days_with_requests.setdefault(s.date.day, {'schedule': 0, 'attendance': 0, 'absence': 0})
             d['schedule'] += 1
-    for a in all_pending_attendances:
+    for a in Attendance.query.filter_by(status='pending').all():
         if a.date.year == cal_year and a.date.month == cal_month:
             d = days_with_requests.setdefault(a.date.day, {'schedule': 0, 'attendance': 0, 'absence': 0})
             d['attendance'] += 1
-    for ab in all_pending_absences + all_pending_deletions:
+    for ab in Absence.query.filter_by(status='pending').all() + Absence.query.filter_by(status='pending_deletion').all():
         d_cur = ab.date_start
         while d_cur <= ab.date_end:
             if d_cur.year == cal_year and d_cur.month == cal_month:
@@ -1371,23 +997,15 @@ def admin_pending_requests():
     else:
         next_year, next_month = cal_year, cal_month + 1
 
-    return render_template(
-        'admin/pending_requests.html',
-        pending_schedules=pending_schedules,
-        pending_absences=pending_absences,
-        pending_attendances=pending_attendances,
-        pending_deletion_absences=pending_deletion_absences,
-        calendar_year=cal_year,
-        calendar_month=cal_month,
-        calendar_month_name=MONTHS_RU[cal_month - 1],
-        calendar_days=month_days,
-        days_with_requests=days_with_requests,
-        prev_year=prev_year,
-        prev_month=prev_month,
-        next_year=next_year,
-        next_month=next_month,
-        show_all=show_all
-    )
+    return render_template('admin/pending_requests.html',
+                           pending_schedules=pending_schedules, pending_absences=pending_absences,
+                           pending_attendances=pending_attendances,
+                           pending_deletion_absences=pending_deletion_absences,
+                           calendar_year=cal_year, calendar_month=cal_month,
+                           calendar_month_name=MONTHS_RU[cal_month - 1], calendar_days=month_days,
+                           days_with_requests=days_with_requests,
+                           prev_year=prev_year, prev_month=prev_month,
+                           next_year=next_year, next_month=next_month, show_all=show_all)
 
 
 @app.route('/admin/approve_schedule/<int:schedule_id>')
@@ -1398,19 +1016,13 @@ def admin_approve_schedule(schedule_id):
         return redirect(url_for('index'))
     schedule = Schedule.query.get_or_404(schedule_id)
     schedule.status = 'approved'
-
-    change = ChangeLog(user_id=current_user.id, target_user_id=schedule.user_id,
-                       field_changed='schedule_approve', old_value='pending', new_value='approved')
-    db.session.add(change)
-
-    notify_user(schedule.user_id,
-                f"✅ Ваш план на {schedule.date.strftime('%d.%m.%Y')} подтверждён администратором.")
+    db.session.add(ChangeLog(user_id=current_user.id, target_user_id=schedule.user_id,
+                             field_changed='schedule_approve', old_value='pending', new_value='approved'))
+    notify_user(schedule.user_id, f"✅ Ваш план на {schedule.date.strftime('%d.%m.%Y')} подтверждён.")
     db.session.commit()
-
     flash('План подтверждён', 'success')
     return redirect(url_for('admin_pending_requests',
-                            cal_year=request.args.get('cal_year'),
-                            cal_month=request.args.get('cal_month'),
+                            cal_year=request.args.get('cal_year'), cal_month=request.args.get('cal_month'),
                             show_all=request.args.get('show_all', '0')))
 
 
@@ -1422,20 +1034,15 @@ def admin_reject_schedule(schedule_id):
         return redirect(url_for('index'))
     schedule = Schedule.query.get_or_404(schedule_id)
     schedule.status = 'rejected'
-
-    change = ChangeLog(user_id=current_user.id, target_user_id=schedule.user_id,
-                       field_changed='schedule_reject', old_value='pending', new_value='rejected')
-    db.session.add(change)
-
-    notify_user(schedule.user_id,
-                f"❌ Ваш план на {schedule.date.strftime('%d.%m.%Y')} отклонён администратором.")
+    db.session.add(ChangeLog(user_id=current_user.id, target_user_id=schedule.user_id,
+                             field_changed='schedule_reject', old_value='pending', new_value='rejected'))
+    notify_user(schedule.user_id, f"❌ Ваш план на {schedule.date.strftime('%d.%m.%Y')} отклонён.")
     db.session.commit()
-
     flash('План отклонён', 'warning')
     return redirect(url_for('admin_pending_requests',
-                            cal_year=request.args.get('cal_year'),
-                            cal_month=request.args.get('cal_month'),
+                            cal_year=request.args.get('cal_year'), cal_month=request.args.get('cal_month'),
                             show_all=request.args.get('show_all', '0')))
+
 
 @app.route('/admin/approve_absence/<int:absence_id>')
 @login_required
@@ -1445,24 +1052,18 @@ def admin_approve_absence(absence_id):
         return redirect(url_for('index'))
     absence = Absence.query.get_or_404(absence_id)
     absence.status = 'approved'
-
-    change = ChangeLog(user_id=current_user.id, target_user_id=absence.user_id,
-                       field_changed='absence_approve', old_value='pending', new_value='approved')
-    db.session.add(change)
-
+    db.session.add(ChangeLog(user_id=current_user.id, target_user_id=absence.user_id,
+                             field_changed='absence_approve', old_value='pending', new_value='approved'))
     type_map = {'vacation': 'отпуск', 'sick': 'больничный', 'other': 'другое'}
     type_ru = type_map.get(absence.type, absence.type)
     if absence.type == 'other' and absence.custom_type:
         type_ru = absence.custom_type
-
     notify_user(absence.user_id,
                 f"✅ Ваша заявка на {type_ru} с {absence.date_start.strftime('%d.%m.%Y')} по {absence.date_end.strftime('%d.%m.%Y')} подтверждена.")
     db.session.commit()
-
-    flash('Отпуск/больничный подтверждён', 'success')
+    flash('Заявка подтверждена', 'success')
     return redirect(url_for('admin_pending_requests',
-                            cal_year=request.args.get('cal_year'),
-                            cal_month=request.args.get('cal_month'),
+                            cal_year=request.args.get('cal_year'), cal_month=request.args.get('cal_month'),
                             show_all=request.args.get('show_all', '0')))
 
 
@@ -1474,25 +1075,20 @@ def admin_reject_absence(absence_id):
         return redirect(url_for('index'))
     absence = Absence.query.get_or_404(absence_id)
     absence.status = 'rejected'
-
-    change = ChangeLog(user_id=current_user.id, target_user_id=absence.user_id,
-                       field_changed='absence_reject', old_value='pending', new_value='rejected')
-    db.session.add(change)
-
+    db.session.add(ChangeLog(user_id=current_user.id, target_user_id=absence.user_id,
+                             field_changed='absence_reject', old_value='pending', new_value='rejected'))
     type_map = {'vacation': 'отпуск', 'sick': 'больничный', 'other': 'другое'}
     type_ru = type_map.get(absence.type, absence.type)
     if absence.type == 'other' and absence.custom_type:
         type_ru = absence.custom_type
-
     notify_user(absence.user_id,
                 f"❌ Ваша заявка на {type_ru} с {absence.date_start.strftime('%d.%m.%Y')} по {absence.date_end.strftime('%d.%m.%Y')} отклонена.")
     db.session.commit()
-
-    flash('Отпуск/больничный отклонён', 'warning')
+    flash('Заявка отклонена', 'warning')
     return redirect(url_for('admin_pending_requests',
-                            cal_year=request.args.get('cal_year'),
-                            cal_month=request.args.get('cal_month'),
+                            cal_year=request.args.get('cal_year'), cal_month=request.args.get('cal_month'),
                             show_all=request.args.get('show_all', '0')))
+
 
 @app.route('/admin/approve_attendance/<int:attendance_id>')
 @login_required
@@ -1502,19 +1098,13 @@ def admin_approve_attendance(attendance_id):
         return redirect(url_for('index'))
     attendance = Attendance.query.get_or_404(attendance_id)
     attendance.status = 'confirmed'
-
-    change = ChangeLog(user_id=current_user.id, target_user_id=attendance.user_id,
-                       field_changed='attendance_approve', old_value='pending', new_value='confirmed')
-    db.session.add(change)
-
-    notify_user(attendance.user_id,
-                f"✅ Ваша отметка за {attendance.date.strftime('%d.%m.%Y')} подтверждена.")
+    db.session.add(ChangeLog(user_id=current_user.id, target_user_id=attendance.user_id,
+                             field_changed='attendance_approve', old_value='pending', new_value='confirmed'))
+    notify_user(attendance.user_id, f"✅ Ваша отметка за {attendance.date.strftime('%d.%m.%Y')} подтверждена.")
     db.session.commit()
-
-    flash('Фактическое время подтверждено', 'success')
+    flash('Факт подтверждён', 'success')
     return redirect(url_for('admin_pending_requests',
-                            cal_year=request.args.get('cal_year'),
-                            cal_month=request.args.get('cal_month'),
+                            cal_year=request.args.get('cal_year'), cal_month=request.args.get('cal_month'),
                             show_all=request.args.get('show_all', '0')))
 
 
@@ -1526,19 +1116,13 @@ def admin_reject_attendance(attendance_id):
         return redirect(url_for('index'))
     attendance = Attendance.query.get_or_404(attendance_id)
     attendance.status = 'rejected'
-
-    change = ChangeLog(user_id=current_user.id, target_user_id=attendance.user_id,
-                       field_changed='attendance_reject', old_value='pending', new_value='rejected')
-    db.session.add(change)
-
-    notify_user(attendance.user_id,
-                f"❌ Ваша отметка за {attendance.date.strftime('%d.%m.%Y')} отклонена. Внесите правки.")
+    db.session.add(ChangeLog(user_id=current_user.id, target_user_id=attendance.user_id,
+                             field_changed='attendance_reject', old_value='pending', new_value='rejected'))
+    notify_user(attendance.user_id, f"❌ Ваша отметка за {attendance.date.strftime('%d.%m.%Y')} отклонена.")
     db.session.commit()
-
-    flash('Фактическое время отклонено', 'warning')
+    flash('Факт отклонён', 'warning')
     return redirect(url_for('admin_pending_requests',
-                            cal_year=request.args.get('cal_year'),
-                            cal_month=request.args.get('cal_month'),
+                            cal_year=request.args.get('cal_year'), cal_month=request.args.get('cal_month'),
                             show_all=request.args.get('show_all', '0')))
 
 
@@ -1551,20 +1135,16 @@ def admin_approve_absence_deletion(absence_id):
     absence = Absence.query.get_or_404(absence_id)
     if absence.status == 'pending_deletion':
         user_id = absence.user_id
-        date_start = absence.date_start
-        date_end = absence.date_end
+        d1, d2 = absence.date_start, absence.date_end
         db.session.delete(absence)
         db.session.commit()
-
-        notify_user(user_id,
-                    f"✅ Ваш запрос на удаление заявки ({date_start.strftime('%d.%m.%Y')} – {date_end.strftime('%d.%m.%Y')}) подтверждён.")
+        notify_user(user_id, f"✅ Ваш запрос на удаление заявки ({d1.strftime('%d.%m.%Y')} – {d2.strftime('%d.%m.%Y')}) подтверждён.")
         db.session.commit()
         flash('Отпуск удалён', 'success')
     else:
         flash('Нет запроса на удаление', 'warning')
     return redirect(url_for('admin_pending_requests',
-                            cal_year=request.args.get('cal_year'),
-                            cal_month=request.args.get('cal_month'),
+                            cal_year=request.args.get('cal_year'), cal_month=request.args.get('cal_month'),
                             show_all=request.args.get('show_all', '0')))
 
 
@@ -1577,16 +1157,14 @@ def admin_reject_absence_deletion(absence_id):
     absence = Absence.query.get_or_404(absence_id)
     if absence.status == 'pending_deletion':
         absence.status = 'approved' if absence.file_path else 'rejected'
-
         notify_user(absence.user_id,
                     f"❌ Ваш запрос на удаление заявки ({absence.date_start.strftime('%d.%m.%Y')} – {absence.date_end.strftime('%d.%m.%Y')}) отклонён.")
         db.session.commit()
-        flash('Запрос на удаление отклонён', 'warning')
+        flash('Запрос отклонён', 'warning')
     else:
         flash('Нет запроса на удаление', 'warning')
     return redirect(url_for('admin_pending_requests',
-                            cal_year=request.args.get('cal_year'),
-                            cal_month=request.args.get('cal_month'),
+                            cal_year=request.args.get('cal_year'), cal_month=request.args.get('cal_month'),
                             show_all=request.args.get('show_all', '0')))
 
 
@@ -1596,17 +1174,10 @@ def admin_history():
     if current_user.role != 'admin':
         flash('Доступ запрещён', 'danger')
         return redirect(url_for('index'))
-
-    schedules = Schedule.query.order_by(Schedule.date.desc()).all()
-    absences = Absence.query.order_by(Absence.date_start.desc()).all()
-    attendances = Attendance.query.order_by(Attendance.date.desc()).all()
-
-    return render_template(
-        'admin/history.html',
-        schedules=schedules,
-        absences=absences,
-        attendances=attendances
-    )
+    return render_template('admin/history.html',
+                           schedules=Schedule.query.order_by(Schedule.date.desc()).all(),
+                           absences=Absence.query.order_by(Absence.date_start.desc()).all(),
+                           attendances=Attendance.query.order_by(Attendance.date.desc()).all())
 
 
 @app.route('/admin/clear_history', methods=['POST'])
@@ -1615,13 +1186,12 @@ def admin_clear_history():
     if current_user.role != 'admin':
         flash('Доступ запрещён', 'danger')
         return redirect(url_for('index'))
-
     Schedule.query.delete()
     Attendance.query.delete()
     Absence.query.delete()
     ChangeLog.query.delete()
     db.session.commit()
-    flash('История заявок очищена', 'success')
+    flash('История очищена', 'success')
     return redirect(url_for('admin_history'))
 
 
@@ -1631,9 +1201,7 @@ def admin_users():
     if current_user.role != 'admin':
         flash('Доступ запрещён', 'danger')
         return redirect(url_for('index'))
-
-    users = User.query.all()
-    return render_template('admin/users.html', users=users)
+    return render_template('admin/users.html', users=User.query.all())
 
 
 @app.route('/admin/users/create', methods=['POST'])
@@ -1642,38 +1210,27 @@ def admin_create_user():
     if current_user.role != 'admin':
         flash('Доступ запрещён', 'danger')
         return redirect(url_for('index'))
-
     full_name = request.form.get('full_name')
     email = request.form.get('email')
     password = request.form.get('password')
     role = request.form.get('role', 'employee')
     telegram_id = request.form.get('telegram_id', '').strip()
-
     if telegram_id and not telegram_id.startswith('@'):
         telegram_id = '@' + telegram_id
-
     if not full_name or not email or not password:
         flash('Заполните все поля', 'danger')
         return redirect(url_for('admin_users'))
-
     if User.query.filter_by(email=email).first():
-        flash('Пользователь с таким email уже существует', 'danger')
+        flash('Пользователь с таким email уже есть', 'danger')
         return redirect(url_for('admin_users'))
-
     if telegram_id and User.query.filter_by(telegram_id=telegram_id).first():
-        flash('Пользователь с таким Telegram ID уже существует', 'danger')
+        flash('Telegram ID уже занят', 'danger')
         return redirect(url_for('admin_users'))
-
-    user = User(
-        full_name=full_name,
-        email=email,
-        password_hash=generate_password_hash(password),
-        role=role,
-        telegram_id=telegram_id or None
-    )
+    user = User(full_name=full_name, email=email,
+                password_hash=generate_password_hash(password),
+                role=role, telegram_id=telegram_id or None)
     db.session.add(user)
     db.session.commit()
-
     flash('Пользователь создан', 'success')
     return redirect(url_for('admin_users'))
 
@@ -1684,17 +1241,14 @@ def admin_delete_user(user_id):
     if current_user.role != 'admin':
         flash('Доступ запрещён', 'danger')
         return redirect(url_for('index'))
-
     user = User.query.get_or_404(user_id)
     if user.id == current_user.id:
-        flash('Нельзя удалить самого себя', 'danger')
+        flash('Нельзя удалить себя', 'danger')
         return redirect(url_for('admin_users'))
-
     Schedule.query.filter_by(user_id=user.id).delete()
     Attendance.query.filter_by(user_id=user.id).delete()
     Absence.query.filter_by(user_id=user.id).delete()
     ChangeLog.query.filter((ChangeLog.user_id == user.id) | (ChangeLog.target_user_id == user.id)).delete()
-
     db.session.delete(user)
     db.session.commit()
     flash(f'Пользователь {user.full_name} удалён', 'success')
@@ -1707,45 +1261,33 @@ def admin_edit_user(user_id):
     if current_user.role != 'admin':
         flash('Доступ запрещён', 'danger')
         return redirect(url_for('index'))
-
     user = User.query.get_or_404(user_id)
-
     if request.method == 'POST':
         full_name = request.form.get('full_name')
         email = request.form.get('email')
         password = request.form.get('password')
         role = request.form.get('role')
         telegram_id = request.form.get('telegram_id', '').strip()
-
         if telegram_id and not telegram_id.startswith('@'):
             telegram_id = '@' + telegram_id
-
         if not full_name or not email:
             flash('Имя и email обязательны', 'danger')
             return redirect(url_for('admin_edit_user', user_id=user.id))
-
-        existing = User.query.filter(User.email == email, User.id != user.id).first()
-        if existing:
-            flash('Пользователь с таким email уже существует', 'danger')
+        if User.query.filter(User.email == email, User.id != user.id).first():
+            flash('Email уже занят', 'danger')
             return redirect(url_for('admin_edit_user', user_id=user.id))
-
-        if telegram_id:
-            existing_tg = User.query.filter(User.telegram_id == telegram_id, User.id != user.id).first()
-            if existing_tg:
-                flash('Пользователь с таким Telegram ID уже существует', 'danger')
-                return redirect(url_for('admin_edit_user', user_id=user.id))
-
+        if telegram_id and User.query.filter(User.telegram_id == telegram_id, User.id != user.id).first():
+            flash('Telegram ID уже занят', 'danger')
+            return redirect(url_for('admin_edit_user', user_id=user.id))
         user.full_name = full_name
         user.email = email
         if password:
             user.password_hash = generate_password_hash(password)
         user.role = role
         user.telegram_id = telegram_id or None
-
         db.session.commit()
-        flash('Данные пользователя обновлены', 'success')
+        flash('Данные обновлены', 'success')
         return redirect(url_for('admin_users'))
-
     return render_template('admin/edit_user.html', user=user)
 
 
@@ -1755,78 +1297,41 @@ def admin_month_summary():
     if current_user.role != 'admin':
         flash('Доступ запрещён', 'danger')
         return redirect(url_for('index'))
-
     year = request.args.get('year', date.today().year, type=int)
     month = request.args.get('month', date.today().month, type=int)
     if month < 1 or month > 12:
         month = date.today().month
-
     start_date = date(year, month, 1)
     end_date = date(year, month, calendar.monthrange(year, month)[1])
-
     employees = User.query.filter_by(role='employee', status='active').all()
-
     summary = []
-    grand_worked = 0
-    grand_eff = 0
-    grand_late = 0
-    grand_final = 0
-
+    grand_worked = grand_eff = grand_late = grand_final = 0
     for emp in employees:
-        total_worked_minutes = 0
-        total_eff_minutes = 0
-        total_late_minutes = 0
-
-        attendances = Attendance.query.filter(
-            Attendance.user_id == emp.id,
-            Attendance.date >= start_date,
-            Attendance.date <= end_date,
-            Attendance.status == 'confirmed'
-        ).all()
-
-        for att in attendances:
+        tm = te = tl = 0
+        for att in Attendance.query.filter(Attendance.user_id == emp.id,
+                                           Attendance.date >= start_date, Attendance.date <= end_date,
+                                           Attendance.status == 'confirmed').all():
             if att.actual_start and att.actual_end:
-                worked = calculate_worked_hours(att.actual_start, att.actual_end)
-                worked_min = int(worked.total_seconds() // 60)
-                eff_min = int(worked_min * att.efficiency)
-                total_worked_minutes += worked_min
-                total_eff_minutes += eff_min
+                w = calculate_worked_hours(att.actual_start, att.actual_end)
+                wm = int(w.total_seconds() // 60)
+                tm += wm
+                te += int(wm * att.efficiency)
                 if att.early_start and att.early_start > 0:
-                    total_late_minutes += att.early_start
-
-        avg_efficiency = (total_eff_minutes / total_worked_minutes * 100) if total_worked_minutes > 0 else 0
-        final_minutes = total_eff_minutes - total_late_minutes
-
-        summary.append({
-            'user': emp,
-            'worked_hours': total_worked_minutes / 60,
-            'avg_efficiency': avg_efficiency,
-            'late_hours': total_late_minutes / 60,
-            'final_hours': final_minutes / 60
-        })
-
-        grand_worked += total_worked_minutes
-        grand_eff += total_eff_minutes
-        grand_late += total_late_minutes
-        grand_final += final_minutes
-
-    grand_avg_eff = (grand_eff / grand_worked * 100) if grand_worked > 0 else 0
-
-    grand_totals = {
-        'worked_hours': grand_worked / 60,
-        'avg_efficiency': grand_avg_eff,
-        'late_hours': grand_late / 60,
-        'final_hours': grand_final / 60
-    }
-
-    return render_template(
-        'admin/month_summary.html',
-        summary=summary,
-        grand_totals=grand_totals,
-        year=year,
-        month=month,
-        month_name=MONTHS_RU[month - 1]
-    )
+                    tl += att.early_start
+        avg = (te / tm * 100) if tm > 0 else 0
+        fm = te - tl
+        summary.append({'user': emp, 'worked_hours': tm/60, 'avg_efficiency': avg,
+                        'late_hours': tl/60, 'final_hours': fm/60})
+        grand_worked += tm
+        grand_eff += te
+        grand_late += tl
+        grand_final += fm
+    grand_avg = (grand_eff / grand_worked * 100) if grand_worked > 0 else 0
+    grand_totals = {'worked_hours': grand_worked/60, 'avg_efficiency': grand_avg,
+                    'late_hours': grand_late/60, 'final_hours': grand_final/60}
+    return render_template('admin/month_summary.html', summary=summary,
+                           grand_totals=grand_totals, year=year, month=month,
+                           month_name=MONTHS_RU[month - 1])
 
 
 @app.route('/admin/export')
@@ -1835,65 +1340,36 @@ def admin_export():
     if current_user.role != 'admin':
         flash('Доступ запрещён', 'danger')
         return redirect(url_for('index'))
-
     year = request.args.get('year', date.today().year, type=int)
     month = request.args.get('month', date.today().month, type=int)
     if month < 1 or month > 12:
         month = date.today().month
-
     start_date = date(year, month, 1)
     end_date = date(year, month, calendar.monthrange(year, month)[1])
-
     employees = User.query.filter_by(role='employee', status='active').all()
-
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = f"Итоги {month}.{year}"
-
-    headers = ['Сотрудник', 'Отработано часов', 'Средний e%', 'Опоздания (часов)', 'Итого часов']
-    ws.append(headers)
-
+    ws.append(['Сотрудник', 'Отработано часов', 'Средний e%', 'Опоздания (часов)', 'Итого часов'])
     for emp in employees:
-        total_worked_minutes = 0
-        total_eff_minutes = 0
-        total_late_minutes = 0
-        attendances = Attendance.query.filter(
-            Attendance.user_id == emp.id,
-            Attendance.date >= start_date,
-            Attendance.date <= end_date,
-            Attendance.status == 'confirmed'
-        ).all()
-        for att in attendances:
+        tm = te = tl = 0
+        for att in Attendance.query.filter(Attendance.user_id == emp.id,
+                                           Attendance.date >= start_date, Attendance.date <= end_date,
+                                           Attendance.status == 'confirmed').all():
             if att.actual_start and att.actual_end:
-                worked = calculate_worked_hours(att.actual_start, att.actual_end)
-                worked_min = int(worked.total_seconds() // 60)
-                eff_min = int(worked_min * att.efficiency)
-                total_worked_minutes += worked_min
-                total_eff_minutes += eff_min
+                w = calculate_worked_hours(att.actual_start, att.actual_end)
+                wm = int(w.total_seconds() // 60)
+                tm += wm
+                te += int(wm * att.efficiency)
                 if att.early_start and att.early_start > 0:
-                    total_late_minutes += att.early_start
-
-        avg_efficiency = (total_eff_minutes / total_worked_minutes * 100) if total_worked_minutes > 0 else 0
-        final_minutes = total_eff_minutes - total_late_minutes
-
-        ws.append([
-            emp.full_name,
-            round(total_worked_minutes / 60, 2),
-            round(avg_efficiency, 1),
-            round(total_late_minutes / 60, 2),
-            round(final_minutes / 60, 2)
-        ])
-
+                    tl += att.early_start
+        avg = (te / tm * 100) if tm > 0 else 0
+        ws.append([emp.full_name, round(tm/60, 2), round(avg, 1), round(tl/60, 2), round((te-tl)/60, 2)])
     output = io.BytesIO()
     wb.save(output)
     output.seek(0)
-
-    return send_file(
-        output,
-        as_attachment=True,
-        download_name=f'summary_{year}_{month}.xlsx',
-        mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-    )
+    return send_file(output, as_attachment=True, download_name=f'summary_{year}_{month}.xlsx',
+                     mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
 
 
 @app.route('/admin/weekly_schedule')
@@ -1902,51 +1378,35 @@ def admin_weekly_schedule():
     if current_user.role != 'admin':
         flash('Доступ запрещён', 'danger')
         return redirect(url_for('index'))
-
     week_offset = request.args.get('offset', 0, type=int)
     today = date.today()
     start_of_week = today - timedelta(days=today.weekday()) + timedelta(weeks=week_offset)
     end_of_week = start_of_week + timedelta(days=6)
-
     employees = User.query.filter_by(role='employee', status='active').all()
-
     days = []
     for i in range(7):
         day = start_of_week + timedelta(days=i)
         plans = {}
         for emp in employees:
             sch = Schedule.query.filter_by(user_id=emp.id, date=day).first()
-            att = Attendance.query.filter(
-                Attendance.user_id == emp.id,
-                Attendance.date == day,
-                Attendance.status != 'rejected'
-            ).first()
+            att = Attendance.query.filter(Attendance.user_id == emp.id, Attendance.date == day,
+                                          Attendance.status != 'rejected').first()
             if sch and sch.status == 'rejected':
                 sch = None
             plans[emp.id] = {'schedule': sch, 'attendance': att}
-        days.append({
-            'date': day,
-            'day_name': DAYS_RU[day.weekday()],
-            'plans': plans
-        })
-
+        days.append({'date': day, 'day_name': DAYS_RU[day.weekday()], 'plans': plans})
     month = start_of_week.month
     year = start_of_week.year
-    cal = calendar.Calendar()
-    month_days = cal.monthdayscalendar(year, month)
+    month_days = calendar.Calendar().monthdayscalendar(year, month)
     num_days = calendar.monthrange(year, month)[1]
-
     month_plans = {}
     for day in range(1, num_days + 1):
         d = date(year, month, day)
         day_plans = []
         for emp in employees:
             sch = Schedule.query.filter_by(user_id=emp.id, date=d).first()
-            att = Attendance.query.filter(
-                Attendance.user_id == emp.id,
-                Attendance.date == d,
-                Attendance.status != 'rejected'
-            ).first()
+            att = Attendance.query.filter(Attendance.user_id == emp.id, Attendance.date == d,
+                                          Attendance.status != 'rejected').first()
             if sch and sch.status == 'rejected':
                 sch = None
             day_plans.append({
@@ -1954,22 +1414,13 @@ def admin_weekly_schedule():
                 'schedule_start': sch.planned_start.strftime('%H:%M') if sch and sch.planned_start else None,
                 'schedule_end': sch.planned_end.strftime('%H:%M') if sch and sch.planned_end else None,
                 'schedule_is_day_off': sch.is_day_off if sch else False,
+                'schedule_plan_text': sch.plan_text if sch else None,
                 'attendance_start': att.actual_start.strftime('%H:%M') if att and att.actual_start else None,
                 'attendance_end': att.actual_end.strftime('%H:%M') if att and att.actual_end else None,
             })
         month_plans[day] = day_plans
-
-    return render_template(
-        'admin/weekly_schedule.html',
-        days=days,
-        employees=employees,
-        start_of_week=start_of_week,
-        end_of_week=end_of_week,
-        week_offset=week_offset,
-        month_days=month_days,
-        month=month,
-        year=year,
-        month_name=MONTHS_RU[month-1],
-        month_plans=month_plans,
-        num_days=num_days
-    )
+    return render_template('admin/weekly_schedule.html', days=days, employees=employees,
+                           start_of_week=start_of_week, end_of_week=end_of_week,
+                           week_offset=week_offset, month_days=month_days, month=month,
+                           year=year, month_name=MONTHS_RU[month-1],
+                           month_plans=month_plans, num_days=num_days)
