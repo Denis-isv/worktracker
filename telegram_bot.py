@@ -1718,7 +1718,7 @@ async def morning_who(context: ContextTypes.DEFAULT_TYPE):
                 )
 
         if working_lines:
-            text_who = "☀️ *Доброе утро!*\n\n👥 *Сегодня работают:*\n\n" + \
+            text_who = "☀️ *Доброе утро!*\n\n👥 *Ленуся, у тебя всё получится!*\n\n" + \
                        "\n".join(working_lines) + "\n\n✅ — уже отметился"
         else:
             text_who = "☀️ *Доброе утро!*\n\nСегодня никто не работает."
