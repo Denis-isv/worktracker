@@ -70,7 +70,7 @@ def esc(text):
 
 
 def normalize_name(s):
-    """Приводит ФИО к сравнимому виду: 'Оборин М.С.' → 'оборинмс'."""
+    """Оборин М.С. → оборинмс, Оборин Михаил Сергеевич → оборинмихаилсергеевич."""
     if not s:
         return ''
     s = s.lower().replace('.', '').replace(' ', '').replace(',', '')
@@ -78,22 +78,35 @@ def normalize_name(s):
 
 
 def find_user_by_name(name_str):
-    """Ищет пользователя по ФИО или его части."""
+    """Ищет пользователя по ФИО: точно по началу нормализованных строк."""
     if not name_str:
         return None
     target = normalize_name(name_str)
+    if not target:
+        return None
+
+    # 1. Полное совпадение
+    for u in User.query.filter_by(role='employee', status='active').all():
+        if normalize_name(u.full_name) == target:
+            return u
+
+    # 2. Совпадение по префиксу: "оборинмс" должно совпасть с "оборинмихаилсергеевич"
     for u in User.query.filter_by(role='employee', status='active').all():
         norm = normalize_name(u.full_name)
-        # Проверяем частичное совпадение: если фамилия + инициалы
-        # Например: "Оборин М.С." → "оборинмс", а "Оборин Михаил Сергеевич" → "оборинмихаилсергеевич"
-        # Проверяем, что target является префиксом или все части target входят в norm
-        if norm.startswith(target[:len(target)]) or target in norm:
+        if norm.startswith(target):
             return u
-        # Попробуем по фамилии
+
+    # 3. Совпадение по фамилии: если в сообщении "Оборин М.С." — берём первого с фамилией "Оборин"
+    # Разбиваем пользователя на части, сравниваем первую часть
+    for u in User.query.filter_by(role='employee', status='active').all():
         parts = u.full_name.split()
-        if parts and normalize_name(parts[0]) == target[:len(normalize_name(parts[0]))]:
-            # Если фамилия совпадает и дальше идут инициалы — подходит
+        if not parts:
+            continue
+        surname = normalize_name(parts[0])
+        if surname and target.startswith(surname):
+            # Проверяем, что после фамилии в target идёт первая буква имени или инициал
             return u
+
     return None
 
 
@@ -189,12 +202,14 @@ def week_text(user, offset):
             else:
                 line = f"• <b>{day_short} {date_str}</b>{marker}: 📋 {sch.planned_start.strftime('%H:%M')}–{sch.planned_end.strftime('%H:%M')}"
                 if sch.plan_text:
-                    line += f"\n   📝 {esc(sch.plan_text[:80])}"
+                    line += f"\n   📝 {esc(sch.plan_text[:200])}"
         else:
             line = f"• <b>{day_short} {date_str}</b>{marker}: —"
 
         if att:
             line += f"\n   ⏰ факт: {att.actual_start.strftime('%H:%M')}–{att.actual_end.strftime('%H:%M')} (e% {int(att.efficiency*100)})"
+            if att.note:
+                line += f"\n   📝 {esc(att.note[:200])}"
 
         text += line + "\n"
 
@@ -214,7 +229,7 @@ def who_text():
         if plan.planned_start and plan.planned_end:
             text += f"• {esc(plan.user.full_name)}: {plan.planned_start.strftime('%H:%M')}–{plan.planned_end.strftime('%H:%M')}\n"
             if plan.plan_text:
-                text += f"   📝 {esc(plan.plan_text[:80])}\n"
+                text += f"   📝 {esc(plan.plan_text[:200])}\n"
 
     if not found:
         text += "Сегодня никто не работает."
@@ -301,13 +316,15 @@ def profile_text(user):
         else:
             text += f"📋 План: {schedule.planned_start.strftime('%H:%M')} – {schedule.planned_end.strftime('%H:%M')}\n"
             if schedule.plan_text:
-                text += f"📝 Задачи: {esc(schedule.plan_text[:200])}\n"
+                text += f"📝 <b>Задачи на день:</b>\n{esc(schedule.plan_text)}\n"
     else:
         text += "📋 План: не указан\n"
 
     if attendance:
         text += f"⏰ Факт: {attendance.actual_start.strftime('%H:%M')} – {attendance.actual_end.strftime('%H:%M')}\n"
         text += f"📈 Эффективность: {int(attendance.efficiency * 100)}%\n"
+        if attendance.note:
+            text += f"📝 <b>Что сделано:</b>\n{esc(attendance.note)}\n"
         text += f"🎯 Статус: {esc(STATUS_RU.get(attendance.status, attendance.status))}"
 
     return text
@@ -513,7 +530,6 @@ def generate_all_week_image(offset=0):
 
 # ================== ПАРСИНГ СТРУКТУРИРОВАННЫХ СООБЩЕНИЙ ==================
 def parse_time_range(text):
-    """Ищет HH:MM - HH:MM и возвращает (time, time) или (None, None)."""
     m = re.search(r'(\d{1,2}:\d{2})\s*[-–—]\s*(\d{1,2}:\d{2})', text)
     if not m:
         return None, None
@@ -524,8 +540,6 @@ def parse_time_range(text):
 
 
 def parse_weekly_structured(text):
-    """Парсит #расписание: возвращает week_start и список дней."""
-    # Ищем "Спринт 28.09 - 03.10" или "Спринт 28.09 - 03.10.2026"
     m = re.search(r'[Сс]принт\s+(\d{1,2}\.\d{1,2})(?:\.\d{2,4})?\s*[-–—]\s*(\d{1,2}\.\d{1,2})(?:\.\d{2,4})?', text)
     if not m:
         return None, None
@@ -540,13 +554,9 @@ def parse_weekly_structured(text):
         return cand
 
     week_start = parse_ddmm(m.group(1))
-    week_start = week_start - timedelta(days=week_start.weekday())  # на понедельник
+    week_start = week_start - timedelta(days=week_start.weekday())
 
-    # Ищем имена сотрудников (строки с заглавной буквы и точками/без)
-    # Возьмём всё сообщение, разобьём по дням
     day_map = {'ПН': 0, 'ВТ': 1, 'СР': 2, 'ЧТ': 3, 'ПТ': 4, 'СБ': 5, 'ВС': 6}
-
-    # Найдём все блоки "ПН: ...", "ВТ: ..." и т.д.
     pattern = r'(ПН|ВТ|СР|ЧТ|ПТ|СБ|ВС)\s*:\s*([^\n]*)((?:\n-[^\n]*)*)'
     matches = re.findall(pattern, text)
 
@@ -574,7 +584,6 @@ def parse_weekly_structured(text):
 
 
 def parse_daily_structured(text):
-    """Парсит #дейли: возвращает dict с датой, временем, эффективностью и задачами."""
     dm = re.search(r'(\d{2}\.\d{2}\.\d{4})', text)
     if not dm:
         return None
@@ -596,11 +605,57 @@ def parse_daily_structured(text):
     return {'date': d, 'start': st, 'end': et, 'eff': eff, 'plan_text': tasks_text}
 
 
+def extract_name_from_message(text, key):
+    """Ищет ФИО в тексте. key = 'расписание' или 'дейли'."""
+    lines = text.split('\n')
+    # Для #расписание: ФИО идёт после строки со "Спринт ...", обычно 2-я или 3-я строка
+    # Для #дейли: ФИО идёт после "Эффективность: N%"
+    if key == 'расписание':
+        # Ищем первую строку, в которой есть фамилия с точкой/инициалами или 2-3 слова
+        for i, line in enumerate(lines):
+            line = line.strip()
+            if not line or line.startswith('#') or line.lower().startswith('спринт'):
+                continue
+            if re.search(r'^[А-ЯЁ][а-яё]+\s+[А-ЯЁ]\.?', line) or \
+               re.match(r'^[А-ЯЁ][а-яё]+\s+[А-ЯЁ][а-яё]+\s+[А-ЯЁ][а-яё]+$', line):
+                return line
+    elif key == 'дейли':
+        # ФИО обычно после "Эффективность: N%" или в первых строках
+        found_eff = False
+        for line in lines:
+            line = line.strip()
+            if not line or line.startswith('#'):
+                continue
+            if 'Эффективность' in line:
+                found_eff = True
+                continue
+            if found_eff and re.match(r'^[А-ЯЁ][а-яё]+', line):
+                return line
+            # Или сразу ФИО
+            if re.match(r'^[А-ЯЁ][а-яё]+\s+[А-ЯЁ][а-яё]+', line):
+                return line
+    return None
+
+
+async def send_personal_summary(bot, user, text):
+    """Отправляет уточнение в личку сотруднику."""
+    if not user.telegram_chat_id:
+        return False
+    try:
+        await bot.send_message(chat_id=user.telegram_chat_id, text=text, parse_mode='HTML')
+        return True
+    except Exception as e:
+        logger.error(f"Не удалось отправить личное сообщение {user.id}: {e}")
+        return False
+
+
 async def handle_structured_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Обработка сообщений с хэштегами #расписание и #дейли."""
+    """Обработка сообщений с хэштегами #расписание и #дейли.
+
+    Сотрудник определяется ПО ФИО в тексте. Все уточнения — в личку.
+    """
     msg = update.message
     chat = update.effective_chat
-    tg_user = update.effective_user
 
     if not msg or not msg.text:
         return
@@ -612,31 +667,21 @@ async def handle_structured_message(update: Update, context: ContextTypes.DEFAUL
     if '#расписание' not in text and '#дейли' not in text:
         return
 
-    # Пытаемся найти пользователя
     with app.app_context():
-        user = None
-        # 1. По username
-        if tg_user.username:
-            user = User.query.filter(User.telegram_id == f"@{tg_user.username}").first()
-        # 2. По chat_id
-        if not user:
-            user = User.query.filter(User.telegram_chat_id == str(tg_user.id)).first()
-        # 3. По ФИО из текста — если в тексте есть имя
-        if not user:
-            # Берём строки и пробуем найти пользователя
-            for line in text.split('\n'):
-                line = line.strip()
-                if not line or line.startswith('#'):
-                    continue
-                found = find_user_by_name(line)
-                if found:
-                    user = found
-                    break
+        # Ищем ФИО в тексте
+        name_str = extract_name_from_message(text, 'расписание' if '#расписание' in text else 'дейли')
+        if not name_str:
+            await msg.reply_text(
+                "⚠️ Не нашёл ФИО в сообщении.\n"
+                "Укажи полное имя или Фамилия И.О. — бот пришлёт уточнения в личку."
+            )
+            return
 
+        user = find_user_by_name(name_str)
         if not user:
             await msg.reply_text(
-                "⚠️ Не удалось определить сотрудника.\n"
-                "Привяжи аккаунт через /start в личке с ботом или укажи ФИО в сообщении."
+                f"⚠️ Не нашёл сотрудника с именем «{esc(name_str)}».\n"
+                f"Обратись к администратору для проверки ФИО."
             )
             return
 
@@ -669,10 +714,28 @@ async def handle_structured_message(update: Update, context: ContextTypes.DEFAUL
                 saved_count += 1
             db.session.commit()
 
-            reply = f"✅ {esc(user.full_name)}, расписание на неделю сохранено ({saved_count} дней)."
+            # Отправляем в личку
+            personal_text = (
+                f"📋 <b>Расписание на неделю сохранено</b>\n"
+                f"📅 Неделя с {week_start.strftime('%d.%m.%Y')}\n"
+                f"✅ Сохранено дней: {saved_count}\n"
+            )
             if conflict_days:
-                reply += f"\n⚠️ Пропущены дни (уже заняты): {', '.join(conflict_days)}"
-            await msg.reply_text(reply, parse_mode='HTML')
+                personal_text += f"⚠️ Пропущены (уже заняты): {', '.join(conflict_days)}\n"
+            personal_text += "\nОткрой «📋 Расписание недели» для просмотра."
+
+            sent = await send_personal_summary(context.bot, user, personal_text)
+            if not sent:
+                await msg.reply_text(
+                    f"✅ {esc(user.full_name)}, расписание сохранено ({saved_count} дней).\n"
+                    f"⚠️ Не могу написать в личку — привяжи бота через /start."
+                )
+            else:
+                # В группе коротко
+                await msg.reply_text(
+                    f"✅ Расписание {esc(user.full_name)} сохранено ({saved_count} дней). "
+                    f"Подробности в личке."
+                )
 
         elif '#дейли' in text:
             daily = parse_daily_structured(text)
@@ -683,8 +746,7 @@ async def handle_structured_message(update: Update, context: ContextTypes.DEFAUL
             existing = Attendance.query.filter_by(user_id=user.id, date=daily['date']).first()
             if existing:
                 await msg.reply_text(
-                    f"⚠️ {esc(user.full_name)}, на {daily['date'].strftime('%d.%m.%Y')} уже есть отметка.",
-                    parse_mode='HTML'
+                    f"⚠️ На {daily['date'].strftime('%d.%m.%Y')} у {esc(user.full_name)} уже есть отметка."
                 )
                 return
 
@@ -706,10 +768,27 @@ async def handle_structured_message(update: Update, context: ContextTypes.DEFAUL
             db.session.add(att)
             db.session.commit()
 
-            await msg.reply_text(
-                f"✅ {esc(user.full_name)}, дейли за {daily['date'].strftime('%d.%m.%Y')} сохранён.",
-                parse_mode='HTML'
+            # Отправляем в личку
+            personal_text = (
+                f"📊 <b>Дейли за {daily['date'].strftime('%d.%m.%Y')} сохранён</b>\n"
+                f"⏰ Время: {daily['start'].strftime('%H:%M')}–{daily['end'].strftime('%H:%M')}\n"
+                f"📈 Эффективность: {daily['eff']}%\n"
+                f"📌 Статус: {'✅ подтверждено' if status == 'confirmed' else '⏳ ожидает подтверждения'}\n"
             )
+            if daily.get('plan_text'):
+                personal_text += f"\n<b>Задачи:</b>\n{esc(daily['plan_text'][:500])}\n"
+            personal_text += "\nПроверь, всё ли верно. Если нужно — исправь через «⏰ Фактическое время»."
+
+            sent = await send_personal_summary(context.bot, user, personal_text)
+            if not sent:
+                await msg.reply_text(
+                    f"✅ {esc(user.full_name)}, дейли сохранён.\n"
+                    f"⚠️ Не могу написать в личку — привяжи бота через /start."
+                )
+            else:
+                await msg.reply_text(
+                    f"✅ Дейли {esc(user.full_name)} сохранён. Подробности в личке."
+                )
 
 
 # ================== СТАРТ / РЕГИСТРАЦИЯ ==================
@@ -1029,17 +1108,15 @@ async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = (
         "❓ <b>Помощь по боту WorkTracker</b>\n\n"
         "Используй кнопки внизу экрана:\n\n"
-        "🕐 <b>Плановое время</b> — план на конкретный день или всю неделю\n"
-        "⏰ <b>Фактическое время</b> — отметить, когда реально пришёл/ушёл\n"
+        "👤 <b>Мой профиль</b> — план и задачи на сегодня\n"
+        "📋 <b>Расписание недели</b> — твой график на неделю\n"
+        "🕐 <b>Плановое время</b> — план на конкретный день\n"
+        "⏰ <b>Фактическое время</b> — когда реально пришёл/ушёл\n"
         "👥 <b>Расписание всех</b> — график всех сотрудников картинкой\n"
-        "📊 <b>Итоги месяца</b> — своя статистика или картинкой для всех\n\n"
-        "В групповом чате можно писать:\n"
-        "<code>#план 25.09.2026 10:00 18:00</code>\n"
-        "<code>#факт 25.09.2026 10:15 18:05 90</code>\n"
-        "<code>#отпуск 25.09.2026 30.09.2026 sick</code>\n\n"
-        "Также можно отправлять структурированные сообщения:\n"
-        "— расписание с хэштегом <code>#расписание</code>\n"
-        "— дейли с хэштегом <code>#дейли</code>"
+        "📊 <b>Итоги месяца</b> — статистика\n\n"
+        "В групповом чате можно отправлять:\n"
+        "— <code>#расписание</code> с ФИО и графиком на неделю\n"
+        "— <code>#дейли</code> с датой, временем и задачами"
     )
     await update.message.reply_text(text, parse_mode='HTML',
                                     reply_markup=main_menu_keyboard())
@@ -2252,7 +2329,6 @@ async def check_notifications(context: ContextTypes.DEFAULT_TYPE):
 
 
 async def test_morning_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Ручной запуск рассылки для теста."""
     await update.message.reply_text("🧪 Запускаю рассылку вручную...")
     await morning_who(context)
     await update.message.reply_text("✅ Рассылка выполнена.")
@@ -2284,12 +2360,13 @@ def main():
     application.add_handler(CallbackQueryHandler(detach_callback, pattern='^detach_'))
     application.add_handler(CallbackQueryHandler(week_pick_callback, pattern='^week_pick_'))
 
-    # ⚠️ ВАЖНО: сначала структурированные сообщения (#расписание и #дейли), потом короткие (#план)
+    # Структурированные сообщения (приоритет выше, чем у коротких)
     application.add_handler(MessageHandler(
         filters.ChatType.GROUPS & filters.TEXT & ~filters.COMMAND,
         handle_structured_message
     ), group=-2)
 
+    # Короткие команды (#план/#факт/#отпуск)
     application.add_handler(MessageHandler(
         filters.ChatType.GROUPS & filters.TEXT & ~filters.COMMAND,
         group_parser
@@ -2298,21 +2375,18 @@ def main():
     # Файлы и фото (для справок)
     application.add_handler(MessageHandler(filters.Document.ALL | filters.PHOTO, text_router))
 
-    # Все текстовые
+    # Все текстовые сообщения
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_router))
 
-    # Уведомления
+    # Уведомления каждые 5 секунд
     application.job_queue.run_repeating(check_notifications, interval=5, first=5)
 
-    # ⚠️ ТЕСТОВАЯ РАССЫЛКА через 3 минуты от текущего момента
-    # После проверки замените на: time=dtime(hour=8, minute=0), days=(0, 1, 2, 3, 4)
-    now = datetime.now()
-    test_time = (now + timedelta(minutes=3)).time()
+    # Утренняя рассылка в 8:00 по будням (0=Пн, 1=Вт, 2=Ср, 3=Чт, 4=Пт)
     application.job_queue.run_daily(
         morning_who,
-        time=dtime(hour=test_time.hour, minute=test_time.minute)
+        time=dtime(hour=8, minute=0),
+        days=(0, 1, 2, 3, 4)
     )
-    print(f"⏰ Тестовая рассылка запланирована на {test_time.strftime('%H:%M')}")
 
     print("🤖 Бот запущен. Нажми Ctrl+C для остановки.")
     application.run_polling()
