@@ -90,7 +90,6 @@ def clear_state(context):
 
 
 def month_offset_range(offset_months):
-    """Возвращает год и месяц с учётом сдвига."""
     today = date.today()
     m = today.month + offset_months
     y = today.year
@@ -101,6 +100,27 @@ def month_offset_range(offset_months):
         m -= 12
         y += 1
     return y, m
+
+
+def get_fonts():
+    font_paths = [
+        '/System/Library/Fonts/Helvetica.ttc',
+        '/System/Library/Fonts/Supplemental/Arial.ttf',
+        '/Library/Fonts/Arial.ttf',
+        '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
+    ]
+    for path in font_paths:
+        try:
+            return {
+                'title': ImageFont.truetype(path, 32),
+                'header': ImageFont.truetype(path, 22),
+                'cell': ImageFont.truetype(path, 18),
+                'small': ImageFont.truetype(path, 16),
+            }
+        except Exception:
+            continue
+    default = ImageFont.load_default()
+    return {'title': default, 'header': default, 'cell': default, 'small': default}
 
 
 # ================== ТЕКСТЫ ==================
@@ -120,7 +140,6 @@ def profile_text(user):
     ).first()
 
     role_ru = ROLE_RU.get(user.role, user.role)
-
     text = f"👤 *{user.full_name}*\n"
     text += f"📧 {user.email}\n"
     text += f"🎭 Роль: {role_ru}\n"
@@ -168,14 +187,12 @@ def week_text(user, offset):
             Attendance.date == day,
             Attendance.status != 'rejected'
         ).first()
-
         if sch and sch.status == 'rejected':
             sch = None
 
         day_short = DAYS_RU_SHORT[day.weekday()]
         date_str = day.strftime('%d.%m')
-        is_today = (day == today)
-        marker = " 🔸" if is_today else ""
+        marker = " 🔸" if day == today else ""
 
         if sch:
             if sch.is_day_off:
@@ -193,36 +210,6 @@ def week_text(user, offset):
     return text
 
 
-def all_week_text(offset):
-    today = date.today()
-    start_of_week = today - timedelta(days=today.weekday()) + timedelta(weeks=offset)
-    end_of_week = start_of_week + timedelta(days=6)
-
-    employees = User.query.filter_by(role='employee', status='active').all()
-    text = f"👥 *Расписание всех на неделю*\n{start_of_week.strftime('%d.%m')} – {end_of_week.strftime('%d.%m.%Y')}\n\n"
-
-    found_any = False
-    for emp in employees:
-        emp_lines = []
-        for i in range(7):
-            day = start_of_week + timedelta(days=i)
-            sch = Schedule.query.filter_by(user_id=emp.id, date=day).first()
-            if sch and sch.status != 'rejected':
-                if sch.is_day_off:
-                    emp_lines.append(f"   {DAYS_RU_SHORT[i]}: 🏖 выходной")
-                else:
-                    emp_lines.append(f"   {DAYS_RU_SHORT[i]}: {sch.planned_start.strftime('%H:%M')}–{sch.planned_end.strftime('%H:%M')}")
-
-        if emp_lines:
-            found_any = True
-            text += f"👤 *{emp.full_name}*\n" + "\n".join(emp_lines) + "\n\n"
-
-    if not found_any:
-        text += "Пока никто не составил расписание на эту неделю."
-
-    return text
-
-
 def who_text():
     today = date.today()
     plans = Schedule.query.filter_by(date=today, status='approved').all()
@@ -234,24 +221,16 @@ def who_text():
             continue
         found = True
         if plan.planned_start and plan.planned_end:
-            att = Attendance.query.filter(
-                Attendance.user_id == plan.user_id,
-                Attendance.date == today,
-                Attendance.status != 'rejected'
-            ).first()
-            marker = " ✅" if att else ""
-            text += f"• {plan.user.full_name}: {plan.planned_start.strftime('%H:%M')}–{plan.planned_end.strftime('%H:%M')}{marker}\n"
+            text += f"• {plan.user.full_name}: {plan.planned_start.strftime('%H:%M')}–{plan.planned_end.strftime('%H:%M')}\n"
 
     if not found:
         text += "Сегодня никто не работает."
 
-    text += "\n✅ — уже отметился"
     return text
 
 
 def summary_text(user, offset_months=0):
     y, m = month_offset_range(offset_months)
-
     import calendar as cal_mod
     start_date = date(y, m, 1)
     end_date = date(y, m, cal_mod.monthrange(y, m)[1])
@@ -281,7 +260,7 @@ def summary_text(user, offset_months=0):
     avg_eff = (total_eff_min / total_worked_min * 100) if total_worked_min > 0 else 0
     final_min = total_eff_min - total_late
 
-    text = (
+    return (
         f"📊 *Мои итоги за {MONTHS_RU_FULL[m-1]} {y}*\n\n"
         f"👤 {user.full_name}\n\n"
         f"📅 Дней отработано: *{count_days}*\n"
@@ -290,7 +269,6 @@ def summary_text(user, offset_months=0):
         f"⏰ Опоздания (часов): *{total_late / 60:.2f}*\n"
         f"✅ Итого часов: *{final_min / 60:.2f}*"
     )
-    return text
 
 
 def absences_text(user):
@@ -316,25 +294,21 @@ def absences_text(user):
     return text
 
 
-# ================== КАРТИНКА ИТОГОВ ==================
+# ================== КАРТИНКИ ==================
 def generate_all_summary_image(offset_months=0):
     y, m = month_offset_range(offset_months)
-
     import calendar as cal_mod
     start_date = date(y, m, 1)
     end_date = date(y, m, cal_mod.monthrange(y, m)[1])
 
     employees = User.query.filter_by(role='employee', status='active').all()
-
     rows = []
     grand_worked = 0
     grand_eff = 0
     grand_late = 0
 
     for emp in employees:
-        wm = 0
-        em = 0
-        late = 0
+        wm = em = late = 0
         atts = Attendance.query.filter(
             Attendance.user_id == emp.id,
             Attendance.date >= start_date,
@@ -350,9 +324,7 @@ def generate_all_summary_image(offset_months=0):
                 if att.early_start and att.early_start > 0:
                     late += att.early_start
         if wm > 0:
-            avg = em / wm * 100
-            final = em - late
-            rows.append((emp.full_name, wm / 60, avg, late / 60, final / 60))
+            rows.append((emp.full_name, wm / 60, em / wm * 100, late / 60, (em - late) / 60))
             grand_worked += wm
             grand_eff += em
             grand_late += late
@@ -369,67 +341,132 @@ def generate_all_summary_image(offset_months=0):
 
     img = Image.new('RGB', (img_width, img_height), '#f8fafc')
     draw = ImageDraw.Draw(img)
+    f = get_fonts()
 
-    # Шрифты
-    font_paths = [
-        '/System/Library/Fonts/Helvetica.ttc',
-        '/System/Library/Fonts/Supplemental/Arial.ttf',
-        '/Library/Fonts/Arial.ttf',
-    ]
-    font_title = font_header = font_cell = font_small = None
-    for path in font_paths:
-        try:
-            font_title = ImageFont.truetype(path, 32)
-            font_header = ImageFont.truetype(path, 22)
-            font_cell = ImageFont.truetype(path, 20)
-            font_small = ImageFont.truetype(path, 18)
-            break
-        except Exception:
-            continue
-    if not font_title:
-        font_title = ImageFont.load_default()
-        font_header = font_title
-        font_cell = font_title
-        font_small = font_title
+    draw.rectangle([0, 0, img_width, header_height], fill='#4f46e5')
+    draw.text((30, 30), 'ИТОГИ МЕСЯЦА', fill='white', font=f['title'])
+    draw.text((30, 85), f'{MONTHS_RU_FULL[m-1]} {y}', fill='#e0e7ff', font=f['header'])
+
+    y0 = header_height
+    draw.rectangle([0, y0, img_width, y0 + table_header_height], fill='#e5e7eb')
+    col_x = [30, 420, 570, 720, 870]
+    headers = ['Сотрудник', 'Отработано', 'Ср. e%', 'Опоздания', 'Итого']
+    for i, h in enumerate(headers):
+        draw.text((col_x[i], y0 + 18), h, fill='#1f2937', font=f['header'])
+
+    for i, (name, worked, avg, late, final) in enumerate(rows):
+        y1 = y0 + table_header_height + i * row_height
+        bg = '#ffffff' if i % 2 == 0 else '#f1f5f9'
+        draw.rectangle([0, y1, img_width, y1 + row_height], fill=bg)
+        name_short = name if len(name) <= 30 else name[:27] + '...'
+        draw.text((col_x[0], y1 + 16), name_short, fill='#1f2937', font=f['cell'])
+        draw.text((col_x[1], y1 + 16), f'{worked:.2f} ч', fill='#4f46e5', font=f['cell'])
+        draw.text((col_x[2], y1 + 16), f'{avg:.1f}%', fill='#06b6d4', font=f['cell'])
+        draw.text((col_x[3], y1 + 16), f'{late:.2f} ч', fill='#f59e0b', font=f['cell'])
+        draw.text((col_x[4], y1 + 16), f'{final:.2f} ч', fill='#10b981', font=f['cell'])
+
+    y_footer = y0 + table_header_height + row_height * max(len(rows), 1)
+    draw.rectangle([0, y_footer, img_width, y_footer + row_height], fill='#1f2937')
+    draw.text((30, y_footer + 16),
+              f'ВСЕГО: {grand_worked/60:.2f} ч  |  ср. e% {grand_avg:.1f}  |  опоздания {grand_late/60:.2f} ч  |  итог {grand_final/60:.2f} ч',
+              fill='white', font=f['small'])
+
+    draw.text((30, img_height - 40),
+              f'Сформировано: {datetime.now().strftime("%d.%m.%Y %H:%M")}',
+              fill='#6b7280', font=f['small'])
+
+    buf = BytesIO()
+    img.save(buf, format='PNG')
+    buf.seek(0)
+    return buf
+
+
+def generate_all_week_image(offset=0):
+    """Картинка с расписанием всех сотрудников на неделю."""
+    today = date.today()
+    start_of_week = today - timedelta(days=today.weekday()) + timedelta(weeks=offset)
+    end_of_week = start_of_week + timedelta(days=6)
+
+    employees = User.query.filter_by(role='employee', status='active').all()
+
+    # Данные: список сотрудников с их планами
+    rows = []
+    for emp in employees:
+        emp_row = []
+        has_any = False
+        for i in range(7):
+            day = start_of_week + timedelta(days=i)
+            sch = Schedule.query.filter_by(user_id=emp.id, date=day).first()
+            if sch and sch.status != 'rejected':
+                if sch.is_day_off:
+                    emp_row.append('Вых')
+                    has_any = True
+                else:
+                    emp_row.append(f"{sch.planned_start.strftime('%H:%M')}–{sch.planned_end.strftime('%H:%M')}")
+                    has_any = True
+            else:
+                emp_row.append('—')
+        if has_any:
+            rows.append((emp.full_name, emp_row))
+
+    # Параметры картинки
+    img_width = 1200
+    header_height = 150
+    table_header_height = 60
+    row_height = 55
+    footer_height = 80
+    img_height = header_height + table_header_height + row_height * max(len(rows), 1) + footer_height
+
+    img = Image.new('RGB', (img_width, img_height), '#f8fafc')
+    draw = ImageDraw.Draw(img)
+    f = get_fonts()
 
     # Заголовок
     draw.rectangle([0, 0, img_width, header_height], fill='#4f46e5')
-    draw.text((30, 30), 'ИТОГИ МЕСЯЦА', fill='white', font=font_title)
-    draw.text((30, 85), f'{MONTHS_RU_FULL[m-1]} {y}', fill='#e0e7ff', font=font_header)
+    draw.text((30, 30), 'РАСПИСАНИЕ НА НЕДЕЛЮ', fill='white', font=f['title'])
+    draw.text((30, 85), f"{start_of_week.strftime('%d.%m')} – {end_of_week.strftime('%d.%m.%Y')}",
+              fill='#e0e7ff', font=f['header'])
 
     # Шапка таблицы
     y0 = header_height
     draw.rectangle([0, y0, img_width, y0 + table_header_height], fill='#e5e7eb')
 
-    col_x = [30, 420, 570, 720, 870]
-    headers = ['Сотрудник', 'Отработано', 'Ср. e%', 'Опоздания', 'Итого']
-    for i, h in enumerate(headers):
-        draw.text((col_x[i], y0 + 18), h, fill='#1f2937', font=font_header)
+    # Столбцы: имя (250px) + 7 дней (примерно по 130px каждый)
+    name_col_width = 230
+    day_col_width = (img_width - name_col_width - 40) / 7
+
+    draw.text((30, y0 + 18), 'Сотрудник', fill='#1f2937', font=f['header'])
+    for i in range(7):
+        day_x = name_col_width + 30 + int(i * day_col_width)
+        draw.text((day_x + 10, y0 + 18), DAYS_RU_SHORT[i], fill='#1f2937', font=f['header'])
 
     # Строки
-    for i, (name, worked, avg, late, final) in enumerate(rows):
+    for i, (name, emp_row) in enumerate(rows):
         y1 = y0 + table_header_height + i * row_height
         bg = '#ffffff' if i % 2 == 0 else '#f1f5f9'
         draw.rectangle([0, y1, img_width, y1 + row_height], fill=bg)
 
-        name_short = name if len(name) <= 30 else name[:27] + '...'
-        draw.text((col_x[0], y1 + 16), name_short, fill='#1f2937', font=font_cell)
-        draw.text((col_x[1], y1 + 16), f'{worked:.2f} ч', fill='#4f46e5', font=font_cell)
-        draw.text((col_x[2], y1 + 16), f'{avg:.1f}%', fill='#06b6d4', font=font_cell)
-        draw.text((col_x[3], y1 + 16), f'{late:.2f} ч', fill='#f59e0b', font=font_cell)
-        draw.text((col_x[4], y1 + 16), f'{final:.2f} ч', fill='#10b981', font=font_cell)
+        name_short = name if len(name) <= 22 else name[:20] + '...'
+        draw.text((30, y1 + 16), name_short, fill='#1f2937', font=f['cell'])
 
-    # Итого
-    y_footer = y0 + table_header_height + row_height * max(len(rows), 1)
-    draw.rectangle([0, y_footer, img_width, y_footer + row_height], fill='#1f2937')
+        for j, cell in enumerate(emp_row):
+            cell_x = name_col_width + 30 + int(j * day_col_width)
+            if cell == 'Вых':
+                draw.text((cell_x + 10, y1 + 16), 'Вых', fill='#6b7280', font=f['cell'])
+            elif cell == '—':
+                draw.text((cell_x + 10, y1 + 16), '—', fill='#9ca3af', font=f['cell'])
+            else:
+                draw.text((cell_x + 5, y1 + 16), cell, fill='#4f46e5', font=f['cell'])
 
-    total_text = f'ВСЕГО: {grand_worked/60:.2f} ч  |  ср. e% {grand_avg:.1f}  |  опоздания {grand_late/60:.2f} ч  |  итог {grand_final/60:.2f} ч'
-    draw.text((30, y_footer + 16), total_text, fill='white', font=font_small)
+    if not rows:
+        y_empty = y0 + table_header_height + 30
+        draw.text((30, y_empty), 'Пока никто не составил расписание на эту неделю.',
+                  fill='#6b7280', font=f['header'])
 
-    # Внизу подпись
+    # Внизу
     draw.text((30, img_height - 40),
               f'Сформировано: {datetime.now().strftime("%d.%m.%Y %H:%M")}',
-              fill='#6b7280', font=font_small)
+              fill='#6b7280', font=f['small'])
 
     buf = BytesIO()
     img.save(buf, format='PNG')
@@ -463,19 +500,23 @@ async def receive_email(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip()
     if text == CANCEL_TEXT:
         clear_state(context)
-        await update.message.reply_text("Отменено. Отправь /start, чтобы начать заново.")
+        await update.message.reply_text(
+            "Отменено. Отправь /start, чтобы начать заново.",
+            reply_markup=main_menu_keyboard()
+        )
         return
 
     chat_id = update.effective_chat.id
     tg_user = update.effective_user
 
     with app.app_context():
+        # Уже привязан к этому чату?
         current = User.query.filter_by(telegram_chat_id=str(chat_id)).first()
         if current:
+            clear_state(context)
             await update.message.reply_text(
-                f"⚠️ Ты уже привязан как *{current.full_name}*.\n\n"
-                f"Чтобы привязать другой аккаунт — сначала отвяжи текущий.",
-                parse_mode='Markdown'
+                f"👋 С возвращением, {current.full_name}!\n\nВыбери действие 👇",
+                reply_markup=main_menu_keyboard()
             )
             return
 
@@ -486,10 +527,11 @@ async def receive_email(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             return
 
+        # Привязан к другому Telegram?
         if user.telegram_chat_id and user.telegram_chat_id != str(chat_id):
             await update.message.reply_text(
-                f"⚠️ Этот email уже привязан к другому Telegram-аккаунту.\n\n"
-                f"Обратись к администратору, если это ошибка."
+                "⚠️ Этот email уже привязан к другому Telegram-аккаунту.\n\n"
+                "Обратись к администратору, если это ошибка."
             )
             return
 
@@ -501,9 +543,10 @@ async def receive_email(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         db.session.commit()
 
+    # ОБЯЗАТЕЛЬНО сбрасываем состояние ПЕРЕД отправкой ответа
     clear_state(context)
     await update.message.reply_text(
-        f"✅ Отлично, {user.full_name}! Аккаунт привязан.\n\nВыбери действие 👇",
+        f"✅ Отлично, {user.full_name}!\nАккаунт успешно привязан.\n\nВыбери действие 👇",
         reply_markup=main_menu_keyboard()
     )
 
@@ -573,10 +616,22 @@ async def week_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def cmd_all_week(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Расписание всех — картинкой."""
     offset = context.user_data.get('all_week_offset', 0)
     with app.app_context():
-        text = all_week_text(offset)
+        buf = generate_all_week_image(offset)
 
+    today = date.today()
+    start_of_week = today - timedelta(days=today.weekday()) + timedelta(weeks=offset)
+
+    await update.message.reply_photo(
+        photo=buf,
+        caption=f"👥 *Расписание всех сотрудников*\nНеделя с {start_of_week.strftime('%d.%m.%Y')}",
+        parse_mode='Markdown',
+        reply_markup=main_menu_keyboard()
+    )
+
+    # Кнопки навигации отдельным сообщением
     kb = InlineKeyboardMarkup([
         [
             InlineKeyboardButton("⬅️", callback_data="allweek_prev"),
@@ -584,7 +639,7 @@ async def cmd_all_week(update: Update, context: ContextTypes.DEFAULT_TYPE):
             InlineKeyboardButton("➡️", callback_data="allweek_next"),
         ]
     ])
-    await update.message.reply_text(text, parse_mode='Markdown', reply_markup=kb)
+    await update.message.reply_text("Навигация по неделям:", reply_markup=kb)
 
 
 async def all_week_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -600,16 +655,17 @@ async def all_week_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     offset = context.user_data.get('all_week_offset', 0)
     with app.app_context():
-        text = all_week_text(offset)
+        buf = generate_all_week_image(offset)
 
-    kb = InlineKeyboardMarkup([
-        [
-            InlineKeyboardButton("⬅️", callback_data="allweek_prev"),
-            InlineKeyboardButton("Текущая", callback_data="allweek_now"),
-            InlineKeyboardButton("➡️", callback_data="allweek_next"),
-        ]
-    ])
-    await query.edit_message_text(text, parse_mode='Markdown', reply_markup=kb)
+    today = date.today()
+    start_of_week = today - timedelta(days=today.weekday()) + timedelta(weeks=offset)
+
+    # Отправляем новую картинку
+    await query.message.reply_photo(
+        photo=buf,
+        caption=f"👥 *Расписание всех сотрудников*\nНеделя с {start_of_week.strftime('%d.%m.%Y')}",
+        parse_mode='Markdown'
+    )
 
 
 async def cmd_who(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -740,13 +796,12 @@ async def summary_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = (
         "❓ *Помощь по боту WorkTracker*\n\n"
-        "Используй кнопки внизу экрана. Краткая справка:\n\n"
-        "🕐 *Плановое время* — план на конкретный день\n"
-        "📅 *Расписание на неделю* — быстрое заполнение всей недели\n"
+        "Используй кнопки внизу экрана:\n\n"
+        "🕐 *Плановое время* — план на конкретный день или всю неделю\n"
         "⏰ *Фактическое время* — отметить, когда реально пришёл/ушёл\n"
-        "👥 *Расписание всех* — график всех сотрудников\n"
+        "👥 *Расписание всех* — график всех сотрудников картинкой\n"
         "📊 *Итоги месяца* — своя статистика или картинкой для всех\n\n"
-        "В групповом чате можно писать команды:\n"
+        "В групповом чате можно писать:\n"
         "`#план 25.09.2026 10:00 18:00`\n"
         "`#факт 25.09.2026 10:15 18:05 90`\n"
         "`#отпуск 25.09.2026 30.09.2026 sick`"
@@ -789,6 +844,10 @@ async def detach_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             user.telegram_chat_id = None
             user.telegram_id = None
             db.session.commit()
+
+    # Очищаем состояние, чтобы следующий /start работал корректно
+    clear_state(context)
+
     await query.edit_message_text(
         "✅ Аккаунт отвязан.\n\nTelegram ID удалён из профиля.\nЧтобы привязать снова — /start."
     )
@@ -845,8 +904,6 @@ async def week_plan_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
     data = query.data
 
     idx = context.user_data.get('week_plan_idx', 0)
-    week_start = context.user_data['week_start']
-    day = week_start + timedelta(days=idx)
 
     if data == "week_cancel":
         clear_state(context)
@@ -879,10 +936,12 @@ async def week_plan_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
         return
 
     if data == "week_custom":
+        # ВАЖНО: используем reply_text, а НЕ edit_message_text,
+        # чтобы гарантированно сменить ReplyKeyboard на cancel_keyboard
         context.user_data['state'] = 'week_custom_start'
-        await query.edit_message_text(
-            f"📅 *{DAYS_RU_FULL[idx]}*\n\n"
-            f"🕐 Введи *время прихода* (ЧЧ:ММ)\nНапример: `09:30`",
+        await query.edit_message_text(f"📅 {DAYS_RU_FULL[idx]}: своё время")
+        await query.message.reply_text(
+            f"🕐 Введи *время прихода* в формате *ЧЧ:ММ*\nНапример: `09:30`",
             parse_mode='Markdown',
             reply_markup=cancel_keyboard()
         )
@@ -891,6 +950,11 @@ async def week_plan_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
 async def week_custom_start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip()
+    if text == CANCEL_TEXT:
+        clear_state(context)
+        await update.message.reply_text("Отменено.", reply_markup=main_menu_keyboard())
+        return
+
     try:
         h, m = text.split(':')
         if len(h) == 1:
@@ -913,6 +977,11 @@ async def week_custom_start_handler(update: Update, context: ContextTypes.DEFAUL
 
 async def week_custom_end_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip()
+    if text == CANCEL_TEXT:
+        clear_state(context)
+        await update.message.reply_text("Отменено.", reply_markup=main_menu_keyboard())
+        return
+
     try:
         h, m = text.split(':')
         if len(h) == 1:
@@ -988,7 +1057,6 @@ async def plan_today_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
     await query.answer()
 
     if query.data == "plan_week":
-        # Запускаем недельный визард
         await week_plan_start(update, context)
         return
 
@@ -999,15 +1067,22 @@ async def plan_today_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     context.user_data['plan_date'] = d
     context.user_data['state'] = 'plan_start'
-    await query.edit_message_text(
-        f"📅 Дата: *{d.strftime('%d.%m.%Y')}*\n\n"
-        f"🕐 Введи *время прихода* (ЧЧ:ММ)\nНапример: `10:00`",
-        parse_mode='Markdown'
+
+    await query.edit_message_text(f"📅 Дата: {d.strftime('%d.%m.%Y')}")
+    await query.message.reply_text(
+        f"🕐 Введи *время прихода* в формате *ЧЧ:ММ*\nНапример: `10:00`",
+        parse_mode='Markdown',
+        reply_markup=cancel_keyboard()
     )
 
 
 async def plan_date_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip()
+    if text == CANCEL_TEXT:
+        clear_state(context)
+        await update.message.reply_text("Отменено.", reply_markup=main_menu_keyboard())
+        return
+
     try:
         d = datetime.strptime(text, '%d.%m.%Y').date()
     except ValueError:
@@ -1020,14 +1095,18 @@ async def plan_date_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data['plan_date'] = d
     context.user_data['state'] = 'plan_start'
     await update.message.reply_text(
-        f"📅 Дата: *{d.strftime('%d.%m.%Y')}*\n\n"
-        f"🕐 Введи *время прихода* (ЧЧ:ММ)",
+        f"📅 Дата: *{d.strftime('%d.%m.%Y')}*\n\n🕐 Введи *время прихода* (ЧЧ:ММ)",
         parse_mode='Markdown', reply_markup=cancel_keyboard()
     )
 
 
 async def plan_start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip()
+    if text == CANCEL_TEXT:
+        clear_state(context)
+        await update.message.reply_text("Отменено.", reply_markup=main_menu_keyboard())
+        return
+
     try:
         h, m = text.split(':')
         if len(h) == 1:
@@ -1041,14 +1120,18 @@ async def plan_start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
     context.user_data['plan_start'] = start_time
     context.user_data['state'] = 'plan_end'
     await update.message.reply_text(
-        f"🕐 Приход: *{start_time.strftime('%H:%M')}*\n\n"
-        f"🕕 Введи *время ухода* (ЧЧ:ММ)",
+        f"🕐 Приход: *{start_time.strftime('%H:%M')}*\n\n🕕 Введи *время ухода* (ЧЧ:ММ)",
         parse_mode='Markdown', reply_markup=cancel_keyboard()
     )
 
 
 async def plan_end_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip()
+    if text == CANCEL_TEXT:
+        clear_state(context)
+        await update.message.reply_text("Отменено.", reply_markup=main_menu_keyboard())
+        return
+
     try:
         h, m = text.split(':')
         if len(h) == 1:
@@ -1101,15 +1184,21 @@ async def fact_date_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
     d = date.today() if query.data == "fact_today" else date.today() - timedelta(days=1)
     context.user_data['fact_date'] = d
     context.user_data['state'] = 'fact_start'
-    await query.edit_message_text(
-        f"📅 Дата: *{d.strftime('%d.%m.%Y')}*\n\n"
-        f"🕐 Введи *время прихода* (ЧЧ:ММ)",
-        parse_mode='Markdown'
+
+    await query.edit_message_text(f"📅 Дата: {d.strftime('%d.%m.%Y')}")
+    await query.message.reply_text(
+        "🕐 Введи *время прихода* (ЧЧ:ММ)",
+        parse_mode='Markdown',
+        reply_markup=cancel_keyboard()
     )
 
 
 async def fact_date_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip().lower()
+    if text == CANCEL_TEXT.lower() or text == CANCEL_TEXT:
+        clear_state(context)
+        await update.message.reply_text("Отменено.", reply_markup=main_menu_keyboard())
+        return
 
     if text == 'сегодня':
         d = date.today()
@@ -1133,14 +1222,18 @@ async def fact_date_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data['fact_date'] = d
     context.user_data['state'] = 'fact_start'
     await update.message.reply_text(
-        f"📅 Дата: *{d.strftime('%d.%m.%Y')}*\n\n"
-        f"🕐 Введи *время прихода* (ЧЧ:ММ)",
+        f"📅 Дата: *{d.strftime('%d.%m.%Y')}*\n\n🕐 Введи *время прихода* (ЧЧ:ММ)",
         parse_mode='Markdown', reply_markup=cancel_keyboard()
     )
 
 
 async def fact_start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip()
+    if text == CANCEL_TEXT:
+        clear_state(context)
+        await update.message.reply_text("Отменено.", reply_markup=main_menu_keyboard())
+        return
+
     try:
         h, m = text.split(':')
         if len(h) == 1:
@@ -1154,14 +1247,18 @@ async def fact_start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
     context.user_data['fact_start'] = start_time
     context.user_data['state'] = 'fact_end'
     await update.message.reply_text(
-        f"🕐 Приход: *{start_time.strftime('%H:%M')}*\n\n"
-        f"🕕 Введи *время ухода* (ЧЧ:ММ)",
+        f"🕐 Приход: *{start_time.strftime('%H:%M')}*\n\n🕕 Введи *время ухода* (ЧЧ:ММ)",
         parse_mode='Markdown', reply_markup=cancel_keyboard()
     )
 
 
 async def fact_end_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip()
+    if text == CANCEL_TEXT:
+        clear_state(context)
+        await update.message.reply_text("Отменено.", reply_markup=main_menu_keyboard())
+        return
+
     try:
         h, m = text.split(':')
         if len(h) == 1:
@@ -1180,14 +1277,18 @@ async def fact_end_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data['fact_end'] = end_time
     context.user_data['state'] = 'fact_eff'
     await update.message.reply_text(
-        f"🕕 Уход: *{end_time.strftime('%H:%M')}*\n\n"
-        f"📈 Введи *эффективность* (0-100)",
+        f"🕕 Уход: *{end_time.strftime('%H:%M')}*\n\n📈 Введи *эффективность* (0-100)",
         parse_mode='Markdown', reply_markup=cancel_keyboard()
     )
 
 
 async def fact_eff_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip()
+    if text == CANCEL_TEXT:
+        clear_state(context)
+        await update.message.reply_text("Отменено.", reply_markup=main_menu_keyboard())
+        return
+
     try:
         eff = float(text)
         if not (0 <= eff <= 100):
@@ -1253,14 +1354,22 @@ async def abs_type_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data['abs_type'] = abs_type
     context.user_data['state'] = 'abs_date_start'
     type_ru = ABS_TYPE_RU.get(abs_type, abs_type)
-    await query.edit_message_text(
-        f"{type_ru}\n\n📅 Введи *дату начала* в формате *ДД.ММ.ГГГГ*\nНапример: `25.09.2026`",
-        parse_mode='Markdown'
+
+    await query.edit_message_text(f"{type_ru}")
+    await query.message.reply_text(
+        "📅 Введи *дату начала* в формате *ДД.ММ.ГГГГ*\nНапример: `25.09.2026`",
+        parse_mode='Markdown',
+        reply_markup=cancel_keyboard()
     )
 
 
 async def abs_date_start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip()
+    if text == CANCEL_TEXT:
+        clear_state(context)
+        await update.message.reply_text("Отменено.", reply_markup=main_menu_keyboard())
+        return
+
     try:
         d = datetime.strptime(text, '%d.%m.%Y').date()
     except ValueError:
@@ -1278,6 +1387,11 @@ async def abs_date_start_handler(update: Update, context: ContextTypes.DEFAULT_T
 
 async def abs_date_end_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip()
+    if text == CANCEL_TEXT:
+        clear_state(context)
+        await update.message.reply_text("Отменено.", reply_markup=main_menu_keyboard())
+        return
+
     try:
         d = datetime.strptime(text, '%d.%m.%Y').date()
     except ValueError:
@@ -1305,14 +1419,18 @@ async def abs_date_end_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         [InlineKeyboardButton("⏭ Пропустить (без файла)", callback_data="abs_skip_file")],
     ])
     await update.message.reply_text(
-        "📎 Прикрепи справку (PDF или фото).\n\n"
-        "Если файла нет — нажми «Пропустить».",
+        "📎 Прикрепи справку (PDF или фото).\n\nЕсли файла нет — нажми «Пропустить».",
         reply_markup=kb
     )
 
 
 async def abs_custom_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip()
+    if text == CANCEL_TEXT:
+        clear_state(context)
+        await update.message.reply_text("Отменено.", reply_markup=main_menu_keyboard())
+        return
+
     if len(text) > 200:
         await update.message.reply_text("❌ Максимум 200 символов.",
                                         reply_markup=cancel_keyboard())
@@ -1330,7 +1448,6 @@ async def abs_custom_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
 
 async def abs_save_final(chat_id, context, file_path=None):
-    """Сохраняет заявку в БД и возвращает текст ответа."""
     d_start = context.user_data['abs_start']
     d_end = context.user_data['abs_end']
     abs_type = context.user_data['abs_type']
@@ -1366,7 +1483,10 @@ async def abs_save_final(chat_id, context, file_path=None):
                 db.session.add(notif)
         db.session.commit()
 
-    type_ru = {'vacation': '🏖 Отпуск', 'sick': '🤒 Больничный', 'other': f'📌 {custom}'}.get(abs_type, abs_type)
+    type_ru = ABS_TYPE_RU.get(abs_type, abs_type)
+    if abs_type == 'other' and custom:
+        type_ru = f"📌 {custom}"
+
     text = f"✅ *Заявка отправлена!*\n\n📌 {type_ru}\n📅 {d_start.strftime('%d.%m.%Y')} – {d_end.strftime('%d.%m.%Y')}"
     if file_path:
         text += "\n📎 Файл прикреплён"
@@ -1433,47 +1553,72 @@ async def text_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
         return
 
+    state = context.user_data.get('state')
+
+    # Если в состоянии диалога — обрабатываем ДО меню (кроме Отмены)
+    if state in ('plan_date', 'plan_start', 'plan_end',
+                 'fact_date', 'fact_start', 'fact_end', 'fact_eff',
+                 'abs_date_start', 'abs_date_end', 'abs_custom', 'abs_file',
+                 'week_custom_start', 'week_custom_end'):
+
+        if text == CANCEL_TEXT:
+            clear_state(context)
+            await update.message.reply_text("Отменено. Главное меню 👇",
+                                            reply_markup=main_menu_keyboard())
+            return
+
+        if state == 'plan_date':
+            await plan_date_handler(update, context)
+        elif state == 'plan_start':
+            await plan_start_handler(update, context)
+        elif state == 'plan_end':
+            await plan_end_handler(update, context)
+        elif state == 'fact_date':
+            await fact_date_handler(update, context)
+        elif state == 'fact_start':
+            await fact_start_handler(update, context)
+        elif state == 'fact_end':
+            await fact_end_handler(update, context)
+        elif state == 'fact_eff':
+            await fact_eff_handler(update, context)
+        elif state == 'abs_date_start':
+            await abs_date_start_handler(update, context)
+        elif state == 'abs_date_end':
+            await abs_date_end_handler(update, context)
+        elif state == 'abs_custom':
+            await abs_custom_handler(update, context)
+        elif state == 'abs_file':
+            await abs_file_handler(update, context)
+        elif state == 'week_custom_start':
+            await week_custom_start_handler(update, context)
+        elif state == 'week_custom_end':
+            await week_custom_end_handler(update, context)
+        return
+
+    # Иначе — обработка меню
     if text == CANCEL_TEXT:
         clear_state(context)
-        await update.message.reply_text("Отменено. Главное меню 👇",
-                                        reply_markup=main_menu_keyboard())
+        await update.message.reply_text("Главное меню 👇", reply_markup=main_menu_keyboard())
         return
 
     if 'Мой профиль' in text:
-        clear_state(context)
-        await cmd_profile(update, context)
-        return
+        clear_state(context); await cmd_profile(update, context); return
     if 'Расписание недели' in text:
-        clear_state(context)
-        await cmd_week(update, context)
-        return
+        clear_state(context); await cmd_week(update, context); return
     if 'Расписание на неделю' in text:
-        await week_plan_start(update, context)
-        return
+        await week_plan_start(update, context); return
     if 'Расписание всех' in text:
-        clear_state(context)
-        await cmd_all_week(update, context)
-        return
+        clear_state(context); await cmd_all_week(update, context); return
     if 'Кто работает' in text:
-        clear_state(context)
-        await cmd_who(update, context)
-        return
+        clear_state(context); await cmd_who(update, context); return
     if 'Мои заявки' in text:
-        clear_state(context)
-        await cmd_my_absences(update, context)
-        return
+        clear_state(context); await cmd_my_absences(update, context); return
     if 'Итоги месяца' in text:
-        clear_state(context)
-        await cmd_summary(update, context)
-        return
+        clear_state(context); await cmd_summary(update, context); return
     if 'Помощь' in text:
-        clear_state(context)
-        await cmd_help(update, context)
-        return
+        clear_state(context); await cmd_help(update, context); return
     if 'Отвязать аккаунт' in text:
-        clear_state(context)
-        await detach_start(update, context)
-        return
+        clear_state(context); await detach_start(update, context); return
 
     if 'Плановое время' in text:
         clear_state(context)
@@ -1485,8 +1630,7 @@ async def text_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ])
         await update.message.reply_text(
             "🕐 *Плановое время*\n\nНа какой день?",
-            parse_mode='Markdown',
-            reply_markup=kb
+            parse_mode='Markdown', reply_markup=kb
         )
         return
 
@@ -1500,8 +1644,7 @@ async def text_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ])
         await update.message.reply_text(
             "⏰ *Фактическое время*\n\nВыбери дату:",
-            parse_mode='Markdown',
-            reply_markup=kb
+            parse_mode='Markdown', reply_markup=kb
         )
         return
 
@@ -1515,49 +1658,14 @@ async def text_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ])
         await update.message.reply_text(
             "🏖 *Заявка на отсутствие*\n\nВыбери тип:",
-            parse_mode='Markdown',
-            reply_markup=kb
+            parse_mode='Markdown', reply_markup=kb
         )
         return
 
-    # === Диалоговые состояния ===
-    state = context.user_data.get('state')
-
-    if state == 'plan_date':
-        await plan_date_handler(update, context)
-    elif state == 'plan_start':
-        await plan_start_handler(update, context)
-    elif state == 'plan_end':
-        await plan_end_handler(update, context)
-
-    elif state == 'fact_date':
-        await fact_date_handler(update, context)
-    elif state == 'fact_start':
-        await fact_start_handler(update, context)
-    elif state == 'fact_end':
-        await fact_end_handler(update, context)
-    elif state == 'fact_eff':
-        await fact_eff_handler(update, context)
-
-    elif state == 'abs_date_start':
-        await abs_date_start_handler(update, context)
-    elif state == 'abs_date_end':
-        await abs_date_end_handler(update, context)
-    elif state == 'abs_custom':
-        await abs_custom_handler(update, context)
-    elif state == 'abs_file':
-        await abs_file_handler(update, context)
-
-    elif state == 'week_custom_start':
-        await week_custom_start_handler(update, context)
-    elif state == 'week_custom_end':
-        await week_custom_end_handler(update, context)
-
-    else:
-        await update.message.reply_text(
-            "🤔 Не понимаю команду. Используй кнопки внизу 👇",
-            reply_markup=main_menu_keyboard()
-        )
+    await update.message.reply_text(
+        "🤔 Не понимаю команду. Используй кнопки внизу 👇",
+        reply_markup=main_menu_keyboard()
+    )
 
 
 # ================== ПАРСИНГ ГРУППЫ ==================
@@ -1646,7 +1754,6 @@ async def group_parser(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     early_start = time_to_minutes(start_time) - time_to_minutes(schedule.planned_start)
 
                 status = 'confirmed' if d == date.today() else 'pending'
-
                 att = Attendance(
                     user_id=user.id, date=d,
                     actual_start=start_time, actual_end=end_time,
@@ -1707,19 +1814,12 @@ async def morning_who(context: ContextTypes.DEFAULT_TYPE):
             if plan.is_day_off or not plan.user or plan.user.status != 'active':
                 continue
             if plan.planned_start and plan.planned_end:
-                att = Attendance.query.filter(
-                    Attendance.user_id == plan.user_id,
-                    Attendance.date == today,
-                    Attendance.status != 'rejected'
-                ).first()
-                marker = " ✅" if att else ""
                 working_lines.append(
-                    f"• {plan.user.full_name}: {plan.planned_start.strftime('%H:%M')}–{plan.planned_end.strftime('%H:%M')}{marker}"
+                    f"• {plan.user.full_name}: {plan.planned_start.strftime('%H:%M')}–{plan.planned_end.strftime('%H:%M')}"
                 )
 
         if working_lines:
-            text_who = "☀️ *Доброе утро!*\n\n👥 *Ленуся, у тебя всё получится!*\n\n" + \
-                       "\n".join(working_lines) + "\n\n✅ — уже отметился"
+            text_who = "☀️ *Доброе утро!*\n\n👥 *Сегодня работают:*\n\n" + "\n".join(working_lines)
         else:
             text_who = "☀️ *Доброе утро!*\n\nСегодня никто не работает."
 
@@ -1793,18 +1893,18 @@ def main():
         group_parser
     ))
 
-    # Файлы (для справки)
+    # Файлы и фото (для справок)
     application.add_handler(MessageHandler(filters.Document.ALL | filters.PHOTO, text_router))
 
     # Все текстовые
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_router))
 
-    # Уведомления и рассылки
+    # Уведомления и утренняя рассылка
     application.job_queue.run_repeating(check_notifications, interval=5, first=5)
     application.job_queue.run_daily(
         morning_who,
-        time=dtime(hour=8, minute=0),
-        days=(1, 2, 3, 4, 5)
+        time=dtime(hour=11, minute=30),
+        days=(1, 2, 3, 4, 5, 6)
     )
 
     print("🤖 Бот запущен. Нажми Ctrl+C для остановки.")

@@ -347,6 +347,7 @@ def employee_weekly_schedule():
         num_days=num_days
     )
 
+
 @app.route('/employee/month_summary')
 @login_required
 def employee_month_summary():
@@ -864,13 +865,19 @@ def employee_absence_add():
             db.session.add(absence)
             db.session.commit()
 
+            # Уведомления админам
             admins = User.query.filter_by(role='admin').all()
+            type_map = {'vacation': 'отпуск', 'sick': 'больничный', 'other': 'другое'}
+            type_ru = type_map.get(absence_type, absence_type)
+            if absence_type == 'other' and custom_type:
+                type_ru = custom_type
+
             for admin in admins:
                 if admin.telegram_chat_id:
                     notif = Notification(
                         user_id=admin.id,
                         chat_id=admin.telegram_chat_id,
-                        message=f"📩 {current_user.full_name} подал заявку на {absence_type} с {date_start.strftime('%d.%m.%Y')} по {date_end.strftime('%d.%m.%Y')}"
+                        message=f"📩 {current_user.full_name} — заявка на {type_ru}: {date_start.strftime('%d.%m.%Y')} – {date_end.strftime('%d.%m.%Y')}"
                     )
                     db.session.add(notif)
             db.session.commit()
@@ -1444,8 +1451,13 @@ def admin_approve_absence(absence_id):
                        field_changed='absence_approve', old_value='pending', new_value='approved')
     db.session.add(change)
 
+    type_map = {'vacation': 'отпуск', 'sick': 'больничный', 'other': 'другое'}
+    type_ru = type_map.get(absence.type, absence.type)
+    if absence.type == 'other' and absence.custom_type:
+        type_ru = absence.custom_type
+
     notify_user(absence.user_id,
-                f"✅ Ваша заявка на {absence.type} с {absence.date_start.strftime('%d.%m.%Y')} по {absence.date_end.strftime('%d.%m.%Y')} подтверждена.")
+                f"✅ Ваша заявка на {type_ru} с {absence.date_start.strftime('%d.%m.%Y')} по {absence.date_end.strftime('%d.%m.%Y')} подтверждена.")
     db.session.commit()
 
     flash('Отпуск/больничный подтверждён', 'success')
@@ -1468,8 +1480,13 @@ def admin_reject_absence(absence_id):
                        field_changed='absence_reject', old_value='pending', new_value='rejected')
     db.session.add(change)
 
+    type_map = {'vacation': 'отпуск', 'sick': 'больничный', 'other': 'другое'}
+    type_ru = type_map.get(absence.type, absence.type)
+    if absence.type == 'other' and absence.custom_type:
+        type_ru = absence.custom_type
+
     notify_user(absence.user_id,
-                f"❌ Ваша заявка на {absence.type} с {absence.date_start.strftime('%d.%m.%Y')} по {absence.date_end.strftime('%d.%m.%Y')} отклонена.")
+                f"❌ Ваша заявка на {type_ru} с {absence.date_start.strftime('%d.%m.%Y')} по {absence.date_end.strftime('%d.%m.%Y')} отклонена.")
     db.session.commit()
 
     flash('Отпуск/больничный отклонён', 'warning')
@@ -1733,6 +1750,7 @@ def admin_edit_user(user_id):
 
     return render_template('admin/edit_user.html', user=user)
 
+
 @app.route('/admin/month_summary', methods=['GET'])
 @login_required
 def admin_month_summary():
@@ -1751,7 +1769,6 @@ def admin_month_summary():
     employees = User.query.filter_by(role='employee', status='active').all()
 
     summary = []
-    # Общие итоги
     grand_worked = 0
     grand_eff = 0
     grand_late = 0
