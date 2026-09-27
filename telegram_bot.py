@@ -1,5 +1,6 @@
 import logging
 import os
+import re
 from datetime import datetime, date, time as dtime, timedelta
 from io import BytesIO
 
@@ -63,10 +64,37 @@ def find_user_by_email(email):
 
 
 def esc(text):
-    """Экранирует спецсимволы для HTML в Telegram."""
     if text is None:
         return ''
     return str(text).replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+
+
+def normalize_name(s):
+    """Приводит ФИО к сравнимому виду: 'Оборин М.С.' → 'оборинмс'."""
+    if not s:
+        return ''
+    s = s.lower().replace('.', '').replace(' ', '').replace(',', '')
+    return s
+
+
+def find_user_by_name(name_str):
+    """Ищет пользователя по ФИО или его части."""
+    if not name_str:
+        return None
+    target = normalize_name(name_str)
+    for u in User.query.filter_by(role='employee', status='active').all():
+        norm = normalize_name(u.full_name)
+        # Проверяем частичное совпадение: если фамилия + инициалы
+        # Например: "Оборин М.С." → "оборинмс", а "Оборин Михаил Сергеевич" → "оборинмихаилсергеевич"
+        # Проверяем, что target является префиксом или все части target входят в norm
+        if norm.startswith(target[:len(target)]) or target in norm:
+            return u
+        # Попробуем по фамилии
+        parts = u.full_name.split()
+        if parts and normalize_name(parts[0]) == target[:len(normalize_name(parts[0]))]:
+            # Если фамилия совпадает и дальше идут инициалы — подходит
+            return u
+    return None
 
 
 def main_menu_keyboard():
@@ -91,7 +119,7 @@ def clear_state(context):
         'fact_date', 'fact_start', 'fact_end', 'fact_eff',
         'abs_type', 'abs_start', 'abs_end', 'abs_custom',
         'week_plan_idx', 'week_plan_data', 'week_start', 'week_temp_start',
-        'pending_plan',
+        'pending_plan', 'pending_fact',
     ]
     for k in keys:
         context.user_data.pop(k, None)
@@ -483,6 +511,207 @@ def generate_all_week_image(offset=0):
     return buf
 
 
+# ================== ПАРСИНГ СТРУКТУРИРОВАННЫХ СООБЩЕНИЙ ==================
+def parse_time_range(text):
+    """Ищет HH:MM - HH:MM и возвращает (time, time) или (None, None)."""
+    m = re.search(r'(\d{1,2}:\d{2})\s*[-–—]\s*(\d{1,2}:\d{2})', text)
+    if not m:
+        return None, None
+    try:
+        return parse_time_string(m.group(1)), parse_time_string(m.group(2))
+    except Exception:
+        return None, None
+
+
+def parse_weekly_structured(text):
+    """Парсит #расписание: возвращает week_start и список дней."""
+    # Ищем "Спринт 28.09 - 03.10" или "Спринт 28.09 - 03.10.2026"
+    m = re.search(r'[Сс]принт\s+(\d{1,2}\.\d{1,2})(?:\.\d{2,4})?\s*[-–—]\s*(\d{1,2}\.\d{1,2})(?:\.\d{2,4})?', text)
+    if not m:
+        return None, None
+
+    today = date.today()
+
+    def parse_ddmm(s):
+        d, mm = s.split('.')
+        cand = date(today.year, int(mm), int(d))
+        if cand < today - timedelta(days=30):
+            cand = date(today.year + 1, int(mm), int(d))
+        return cand
+
+    week_start = parse_ddmm(m.group(1))
+    week_start = week_start - timedelta(days=week_start.weekday())  # на понедельник
+
+    # Ищем имена сотрудников (строки с заглавной буквы и точками/без)
+    # Возьмём всё сообщение, разобьём по дням
+    day_map = {'ПН': 0, 'ВТ': 1, 'СР': 2, 'ЧТ': 3, 'ПТ': 4, 'СБ': 5, 'ВС': 6}
+
+    # Найдём все блоки "ПН: ...", "ВТ: ..." и т.д.
+    pattern = r'(ПН|ВТ|СР|ЧТ|ПТ|СБ|ВС)\s*:\s*([^\n]*)((?:\n-[^\n]*)*)'
+    matches = re.findall(pattern, text)
+
+    days_data = []
+    for day_code, time_part, tasks_part in matches:
+        idx = day_map.get(day_code)
+        if idx is None:
+            continue
+        time_part = time_part.strip()
+        tasks_lines = [l.strip() for l in tasks_part.split('\n') if l.strip().startswith('-')]
+        tasks_text = '\n'.join(tasks_lines)
+
+        if '—' in time_part and not re.search(r'\d', time_part):
+            days_data.append({'idx': idx, 'is_day_off': True, 'plan_text': tasks_text or None})
+        else:
+            st, et = parse_time_range(time_part)
+            if st and et:
+                days_data.append({
+                    'idx': idx, 'is_day_off': False,
+                    'start': st, 'end': et,
+                    'plan_text': tasks_text or None
+                })
+
+    return week_start, days_data
+
+
+def parse_daily_structured(text):
+    """Парсит #дейли: возвращает dict с датой, временем, эффективностью и задачами."""
+    dm = re.search(r'(\d{2}\.\d{2}\.\d{4})', text)
+    if not dm:
+        return None
+    try:
+        d = datetime.strptime(dm.group(1), '%d.%m.%Y').date()
+    except ValueError:
+        return None
+
+    st, et = parse_time_range(text)
+    if not st or not et:
+        return None
+
+    em = re.search(r'[Ээ]ффективность\s*:\s*(\d+)', text)
+    eff = int(em.group(1)) if em else 100
+
+    tasks_lines = [l.strip() for l in text.split('\n') if l.strip().startswith('-')]
+    tasks_text = '\n'.join(tasks_lines)
+
+    return {'date': d, 'start': st, 'end': et, 'eff': eff, 'plan_text': tasks_text}
+
+
+async def handle_structured_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обработка сообщений с хэштегами #расписание и #дейли."""
+    msg = update.message
+    chat = update.effective_chat
+    tg_user = update.effective_user
+
+    if not msg or not msg.text:
+        return
+    if chat.type not in ('group', 'supergroup'):
+        return
+
+    text = msg.text
+
+    if '#расписание' not in text and '#дейли' not in text:
+        return
+
+    # Пытаемся найти пользователя
+    with app.app_context():
+        user = None
+        # 1. По username
+        if tg_user.username:
+            user = User.query.filter(User.telegram_id == f"@{tg_user.username}").first()
+        # 2. По chat_id
+        if not user:
+            user = User.query.filter(User.telegram_chat_id == str(tg_user.id)).first()
+        # 3. По ФИО из текста — если в тексте есть имя
+        if not user:
+            # Берём строки и пробуем найти пользователя
+            for line in text.split('\n'):
+                line = line.strip()
+                if not line or line.startswith('#'):
+                    continue
+                found = find_user_by_name(line)
+                if found:
+                    user = found
+                    break
+
+        if not user:
+            await msg.reply_text(
+                "⚠️ Не удалось определить сотрудника.\n"
+                "Привяжи аккаунт через /start в личке с ботом или укажи ФИО в сообщении."
+            )
+            return
+
+        saved_count = 0
+        conflict_days = []
+
+        if '#расписание' in text:
+            week_start, days_data = parse_weekly_structured(text)
+            if not week_start or not days_data:
+                await msg.reply_text("❌ Не удалось разобрать расписание. Проверь формат.")
+                return
+
+            for day in days_data:
+                target_date = week_start + timedelta(days=day['idx'])
+                existing = Schedule.query.filter_by(user_id=user.id, date=target_date).first()
+                if existing:
+                    conflict_days.append(target_date.strftime('%d.%m'))
+                    continue
+
+                if day['is_day_off']:
+                    s = Schedule(user_id=user.id, date=target_date,
+                                 is_day_off=True, status='approved',
+                                 plan_text=day.get('plan_text'))
+                else:
+                    s = Schedule(user_id=user.id, date=target_date,
+                                 planned_start=day['start'], planned_end=day['end'],
+                                 is_day_off=False, status='approved',
+                                 plan_text=day.get('plan_text'))
+                db.session.add(s)
+                saved_count += 1
+            db.session.commit()
+
+            reply = f"✅ {esc(user.full_name)}, расписание на неделю сохранено ({saved_count} дней)."
+            if conflict_days:
+                reply += f"\n⚠️ Пропущены дни (уже заняты): {', '.join(conflict_days)}"
+            await msg.reply_text(reply, parse_mode='HTML')
+
+        elif '#дейли' in text:
+            daily = parse_daily_structured(text)
+            if not daily:
+                await msg.reply_text("❌ Не удалось разобрать дейли. Проверь формат.")
+                return
+
+            existing = Attendance.query.filter_by(user_id=user.id, date=daily['date']).first()
+            if existing:
+                await msg.reply_text(
+                    f"⚠️ {esc(user.full_name)}, на {daily['date'].strftime('%d.%m.%Y')} уже есть отметка.",
+                    parse_mode='HTML'
+                )
+                return
+
+            schedule = Schedule.query.filter_by(
+                user_id=user.id, date=daily['date'], status='approved'
+            ).first()
+            early_start = 0
+            if schedule and schedule.planned_start and not schedule.is_day_off:
+                early_start = time_to_minutes(daily['start']) - time_to_minutes(schedule.planned_start)
+
+            status = 'confirmed' if daily['date'] == date.today() else 'pending'
+
+            att = Attendance(
+                user_id=user.id, date=daily['date'],
+                actual_start=daily['start'], actual_end=daily['end'],
+                efficiency=daily['eff'] / 100, early_start=early_start,
+                note=daily.get('plan_text'), status=status
+            )
+            db.session.add(att)
+            db.session.commit()
+
+            await msg.reply_text(
+                f"✅ {esc(user.full_name)}, дейли за {daily['date'].strftime('%d.%m.%Y')} сохранён.",
+                parse_mode='HTML'
+            )
+
+
 # ================== СТАРТ / РЕГИСТРАЦИЯ ==================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     clear_state(context)
@@ -807,7 +1036,10 @@ async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "В групповом чате можно писать:\n"
         "<code>#план 25.09.2026 10:00 18:00</code>\n"
         "<code>#факт 25.09.2026 10:15 18:05 90</code>\n"
-        "<code>#отпуск 25.09.2026 30.09.2026 sick</code>"
+        "<code>#отпуск 25.09.2026 30.09.2026 sick</code>\n\n"
+        "Также можно отправлять структурированные сообщения:\n"
+        "— расписание с хэштегом <code>#расписание</code>\n"
+        "— дейли с хэштегом <code>#дейли</code>"
     )
     await update.message.reply_text(text, parse_mode='HTML',
                                     reply_markup=main_menu_keyboard())
@@ -849,7 +1081,6 @@ async def detach_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             db.session.commit()
 
     clear_state(context)
-
     await query.edit_message_text(
         "✅ Аккаунт отвязан.\n\nTelegram ID удалён из профиля.\nЧтобы привязать снова — /start."
     )
@@ -1399,11 +1630,29 @@ async def fact_eff_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     with app.app_context():
         user = get_user_by_chat(chat_id)
         existing = Attendance.query.filter_by(user_id=user.id, date=d).first()
+
         if existing:
-            clear_state(context)
+            existing_text = (
+                f"⏰ {existing.actual_start.strftime('%H:%M')}–{existing.actual_end.strftime('%H:%M')}\n"
+                f"📈 e%: {int(existing.efficiency * 100)}"
+            )
+            context.user_data['pending_fact'] = {
+                'date': d, 'start': start_time, 'end': end_time, 'eff': eff
+            }
+            context.user_data['state'] = 'fact_conflict'
+
+            kb = InlineKeyboardMarkup([
+                [InlineKeyboardButton("✏️ Заменить", callback_data="fact_replace")],
+                [InlineKeyboardButton("❌ Оставить старое", callback_data="fact_keep")],
+            ])
             await update.message.reply_text(
-                f"⚠️ На {d.strftime('%d.%m.%Y')} уже есть отметка.",
-                reply_markup=main_menu_keyboard()
+                f"⚠️ На <b>{d.strftime('%d.%m.%Y')}</b> уже есть отметка:\n\n"
+                f"{existing_text}\n\n"
+                f"Новая отметка: <b>{start_time.strftime('%H:%M')}–{end_time.strftime('%H:%M')}</b>, "
+                f"e% <b>{int(eff)}</b>\n\n"
+                f"Что сделать?",
+                parse_mode='HTML',
+                reply_markup=kb
             )
             return
 
@@ -1436,6 +1685,48 @@ async def fact_eff_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"📈 e%: {int(eff)}",
             reply_markup=main_menu_keyboard()
         )
+
+
+async def fact_conflict_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    if query.data == "fact_keep":
+        clear_state(context)
+        await query.edit_message_text("Оставлено как было.")
+        await query.message.reply_text("Главное меню:", reply_markup=main_menu_keyboard())
+        return
+
+    if query.data == "fact_replace":
+        data = context.user_data.get('pending_fact')
+        if not data:
+            await query.edit_message_text("❌ Данные потеряны, попробуй снова.")
+            return
+
+        chat_id = query.message.chat_id
+        with app.app_context():
+            user = get_user_by_chat(chat_id)
+            existing = Attendance.query.filter_by(user_id=user.id, date=data['date']).first()
+            if existing:
+                schedule = Schedule.query.filter_by(
+                    user_id=user.id, date=data['date'], status='approved'
+                ).first()
+                early_start = 0
+                if schedule and schedule.planned_start and not schedule.is_day_off:
+                    early_start = time_to_minutes(data['start']) - time_to_minutes(schedule.planned_start)
+
+                status = 'confirmed' if data['date'] == date.today() else 'pending'
+
+                existing.actual_start = data['start']
+                existing.actual_end = data['end']
+                existing.efficiency = data['eff'] / 100
+                existing.early_start = early_start
+                existing.status = status
+                db.session.commit()
+
+        clear_state(context)
+        await query.edit_message_text("✅ Заменено.")
+        await query.message.reply_text("Главное меню:", reply_markup=main_menu_keyboard())
 
 
 # ================== ОТПУСК ==================
@@ -1759,7 +2050,7 @@ async def text_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
-# ================== ПАРСИНГ ГРУППЫ ==================
+# ================== ПАРСИНГ КОРОТКИХ КОМАНД (#план/#факт/#отпуск) ==================
 async def group_parser(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = update.message
     chat = update.effective_chat
@@ -1915,6 +2206,7 @@ async def morning_who(context: ContextTypes.DEFAULT_TYPE):
             text_who = "☀️ <b>Доброе утро!</b>\n\nСегодня никто не работает."
 
         employees = User.query.filter_by(role='employee', status='active').all()
+        sent_count = 0
         for emp in employees:
             if not emp.telegram_chat_id:
                 continue
@@ -1939,8 +2231,11 @@ async def morning_who(context: ContextTypes.DEFAULT_TYPE):
                     text=text_who + reminder,
                     parse_mode='HTML'
                 )
+                sent_count += 1
             except Exception as e:
                 logger.error(f"Ошибка утренней рассылки {emp.id}: {e}")
+
+        logger.info(f"Утренняя рассылка: отправлено {sent_count}")
 
 
 async def check_notifications(context: ContextTypes.DEFAULT_TYPE):
@@ -1956,6 +2251,13 @@ async def check_notifications(context: ContextTypes.DEFAULT_TYPE):
         db.session.commit()
 
 
+async def test_morning_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Ручной запуск рассылки для теста."""
+    await update.message.reply_text("🧪 Запускаю рассылку вручную...")
+    await morning_who(context)
+    await update.message.reply_text("✅ Рассылка выполнена.")
+
+
 # ================== ЗАПУСК ==================
 def main():
     if not Config.TELEGRAM_BOT_TOKEN:
@@ -1965,11 +2267,13 @@ def main():
     application = Application.builder().token(Config.TELEGRAM_BOT_TOKEN).build()
 
     application.add_handler(CommandHandler('start', start))
+    application.add_handler(CommandHandler('test_morning', test_morning_cmd))
 
     # Callback-обработчики
     application.add_handler(CallbackQueryHandler(plan_today_callback, pattern='^plan_(today|tomorrow|week)$'))
     application.add_handler(CallbackQueryHandler(plan_conflict_callback, pattern='^plan_(replace|keep)$'))
     application.add_handler(CallbackQueryHandler(fact_date_callback, pattern='^fact_(today|yesterday)$'))
+    application.add_handler(CallbackQueryHandler(fact_conflict_callback, pattern='^fact_(replace|keep)$'))
     application.add_handler(CallbackQueryHandler(abs_type_callback, pattern='^abs_(vacation|sick|other)$'))
     application.add_handler(CallbackQueryHandler(abs_skip_file_callback, pattern='^abs_skip_file$'))
     application.add_handler(CallbackQueryHandler(week_callback, pattern='^week_(prev|next|now)$'))
@@ -1980,11 +2284,16 @@ def main():
     application.add_handler(CallbackQueryHandler(detach_callback, pattern='^detach_'))
     application.add_handler(CallbackQueryHandler(week_pick_callback, pattern='^week_pick_'))
 
-    # Парсинг группы
+    # ⚠️ ВАЖНО: сначала структурированные сообщения (#расписание и #дейли), потом короткие (#план)
+    application.add_handler(MessageHandler(
+        filters.ChatType.GROUPS & filters.TEXT & ~filters.COMMAND,
+        handle_structured_message
+    ), group=-2)
+
     application.add_handler(MessageHandler(
         filters.ChatType.GROUPS & filters.TEXT & ~filters.COMMAND,
         group_parser
-    ))
+    ), group=-1)
 
     # Файлы и фото (для справок)
     application.add_handler(MessageHandler(filters.Document.ALL | filters.PHOTO, text_router))
@@ -1995,13 +2304,15 @@ def main():
     # Уведомления
     application.job_queue.run_repeating(check_notifications, interval=5, first=5)
 
-    # ⚠️ ВРЕМЕННАЯ РАССЫЛКА — сегодня в 12:15 без фильтра по дням
-    # После проверки замените на:
-    # time=dtime(hour=8, minute=0), days=(0, 1, 2, 3, 4)   # Пн-Пт
+    # ⚠️ ТЕСТОВАЯ РАССЫЛКА через 3 минуты от текущего момента
+    # После проверки замените на: time=dtime(hour=8, minute=0), days=(0, 1, 2, 3, 4)
+    now = datetime.now()
+    test_time = (now + timedelta(minutes=3)).time()
     application.job_queue.run_daily(
         morning_who,
-        time=dtime(hour=12, minute=15)
+        time=dtime(hour=test_time.hour, minute=test_time.minute)
     )
+    print(f"⏰ Тестовая рассылка запланирована на {test_time.strftime('%H:%M')}")
 
     print("🤖 Бот запущен. Нажми Ctrl+C для остановки.")
     application.run_polling()
