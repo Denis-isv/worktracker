@@ -124,53 +124,6 @@ def get_fonts():
 
 
 # ================== ТЕКСТЫ ==================
-def profile_text(user):
-    today = date.today()
-    schedule = Schedule.query.filter_by(user_id=user.id, date=today).first()
-    attendance = Attendance.query.filter(
-        Attendance.user_id == user.id,
-        Attendance.date == today,
-        Attendance.status != 'rejected'
-    ).first()
-    absence = Absence.query.filter(
-        Absence.user_id == user.id,
-        Absence.date_start <= today,
-        Absence.date_end >= today,
-        Absence.status == 'approved'
-    ).first()
-
-    role_ru = ROLE_RU.get(user.role, user.role)
-    text = f"👤 *{user.full_name}*\n"
-    text += f"📧 {user.email}\n"
-    text += f"🎭 Роль: {role_ru}\n"
-    if user.telegram_id:
-        text += f"💬 {user.telegram_id}\n"
-    text += "\n"
-
-    if absence:
-        abs_ru = ABS_TYPE_RU.get(absence.type, absence.type)
-        if absence.type == 'other' and absence.custom_type:
-            abs_ru = f"📌 {absence.custom_type}"
-        text += f"{abs_ru} до {absence.date_end.strftime('%d.%m.%Y')}\n\n"
-
-    text += f"*Сегодня — {DAYS_RU_FULL[today.weekday()]}, {today.strftime('%d.%m.%Y')}:*\n"
-
-    if schedule and schedule.status != 'rejected':
-        if schedule.is_day_off:
-            text += "🏖 План: выходной\n"
-        else:
-            text += f"📋 План: {schedule.planned_start.strftime('%H:%M')} – {schedule.planned_end.strftime('%H:%M')}\n"
-    else:
-        text += "📋 План: не указан\n"
-
-    if attendance:
-        text += f"⏰ Факт: {attendance.actual_start.strftime('%H:%M')} – {attendance.actual_end.strftime('%H:%M')}\n"
-        text += f"📈 Эффективность: {int(attendance.efficiency * 100)}%\n"
-        text += f"🎯 Статус: {STATUS_RU.get(attendance.status, attendance.status)}"
-
-    return text
-
-
 def week_text(user, offset):
     today = date.today()
     start_of_week = today - timedelta(days=today.weekday()) + timedelta(weeks=offset)
@@ -270,6 +223,59 @@ def summary_text(user, offset_months=0):
         f"✅ Итого часов: *{final_min / 60:.2f}*"
     )
 
+
+def esc(text):
+    """Экранирует спецсимволы для HTML в Telegram."""
+    if text is None:
+        return ''
+    return str(text).replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+
+
+def profile_text(user):
+    today = date.today()
+    schedule = Schedule.query.filter_by(user_id=user.id, date=today).first()
+    attendance = Attendance.query.filter(
+        Attendance.user_id == user.id,
+        Attendance.date == today,
+        Attendance.status != 'rejected'
+    ).first()
+    absence = Absence.query.filter(
+        Absence.user_id == user.id,
+        Absence.date_start <= today,
+        Absence.date_end >= today,
+        Absence.status == 'approved'
+    ).first()
+
+    role_ru = ROLE_RU.get(user.role, user.role)
+    text = f"👤 <b>{esc(user.full_name)}</b>\n"
+    text += f"📧 {esc(user.email)}\n"
+    text += f"🎭 Роль: {esc(role_ru)}\n"
+    if user.telegram_id:
+        text += f"💬 {esc(user.telegram_id)}\n"
+    text += "\n"
+
+    if absence:
+        abs_ru = ABS_TYPE_RU.get(absence.type, absence.type)
+        if absence.type == 'other' and absence.custom_type:
+            abs_ru = f"📌 {esc(absence.custom_type)}"
+        text += f"{abs_ru} до {absence.date_end.strftime('%d.%m.%Y')}\n\n"
+
+    text += f"<b>Сегодня — {DAYS_RU_FULL[today.weekday()]}, {today.strftime('%d.%m.%Y')}:</b>\n"
+
+    if schedule and schedule.status != 'rejected':
+        if schedule.is_day_off:
+            text += "🏖 План: выходной\n"
+        else:
+            text += f"📋 План: {schedule.planned_start.strftime('%H:%M')} – {schedule.planned_end.strftime('%H:%M')}\n"
+    else:
+        text += "📋 План: не указан\n"
+
+    if attendance:
+        text += f"⏰ Факт: {attendance.actual_start.strftime('%H:%M')} – {attendance.actual_end.strftime('%H:%M')}\n"
+        text += f"📈 Эффективность: {int(attendance.efficiency * 100)}%\n"
+        text += f"🎯 Статус: {esc(STATUS_RU.get(attendance.status, attendance.status))}"
+
+    return text
 
 def absences_text(user):
     absences = Absence.query.filter_by(user_id=user.id).order_by(Absence.date_start.desc()).limit(10).all()
@@ -382,14 +388,12 @@ def generate_all_summary_image(offset_months=0):
 
 
 def generate_all_week_image(offset=0):
-    """Картинка с расписанием всех сотрудников на неделю."""
     today = date.today()
     start_of_week = today - timedelta(days=today.weekday()) + timedelta(weeks=offset)
     end_of_week = start_of_week + timedelta(days=6)
 
     employees = User.query.filter_by(role='employee', status='active').all()
 
-    # Данные: список сотрудников с их планами
     rows = []
     for emp in employees:
         emp_row = []
@@ -409,10 +413,9 @@ def generate_all_week_image(offset=0):
         if has_any:
             rows.append((emp.full_name, emp_row))
 
-    # Параметры картинки
-    img_width = 1200
+    img_width = 1400
     header_height = 150
-    table_header_height = 60
+    table_header_height = 70
     row_height = 55
     footer_height = 80
     img_height = header_height + table_header_height + row_height * max(len(rows), 1) + footer_height
@@ -431,14 +434,17 @@ def generate_all_week_image(offset=0):
     y0 = header_height
     draw.rectangle([0, y0, img_width, y0 + table_header_height], fill='#e5e7eb')
 
-    # Столбцы: имя (250px) + 7 дней (примерно по 130px каждый)
     name_col_width = 230
     day_col_width = (img_width - name_col_width - 40) / 7
 
-    draw.text((30, y0 + 18), 'Сотрудник', fill='#1f2937', font=f['header'])
+    draw.text((30, y0 + 25), 'Сотрудник', fill='#1f2937', font=f['header'])
+
+    # Дни недели + даты
     for i in range(7):
         day_x = name_col_width + 30 + int(i * day_col_width)
-        draw.text((day_x + 10, y0 + 18), DAYS_RU_SHORT[i], fill='#1f2937', font=f['header'])
+        day = start_of_week + timedelta(days=i)
+        day_title = f"{DAYS_RU_SHORT[i]} {day.strftime('%d.%m')}"
+        draw.text((day_x + 10, y0 + 25), day_title, fill='#1f2937', font=f['header'])
 
     # Строки
     for i, (name, emp_row) in enumerate(rows):
@@ -463,7 +469,6 @@ def generate_all_week_image(offset=0):
         draw.text((30, y_empty), 'Пока никто не составил расписание на эту неделю.',
                   fill='#6b7280', font=f['header'])
 
-    # Внизу
     draw.text((30, img_height - 40),
               f'Сформировано: {datetime.now().strftime("%d.%m.%Y %H:%M")}',
               fill='#6b7280', font=f['small'])
@@ -472,7 +477,6 @@ def generate_all_week_image(offset=0):
     img.save(buf, format='PNG')
     buf.seek(0)
     return buf
-
 
 # ================== СТАРТ / РЕГИСТРАЦИЯ ==================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -856,16 +860,54 @@ async def detach_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ================== ПЛАНИРОВАНИЕ НА ВСЮ НЕДЕЛЮ ==================
 async def week_plan_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     clear_state(context)
-    context.user_data['state'] = 'week_plan'
-    context.user_data['week_plan_idx'] = 0
-    context.user_data['week_plan_data'] = {}
+    context.user_data['state'] = 'week_choose'
 
     today = date.today()
-    next_monday = today + timedelta(days=(7 - today.weekday()))
-    context.user_data['week_start'] = next_monday
+    this_monday = today - timedelta(days=today.weekday())
+    next_monday = this_monday + timedelta(days=7)
+    week_after = this_monday + timedelta(days=14)
 
-    await ask_week_day(update, context)
+    kb = InlineKeyboardMarkup([
+        [InlineKeyboardButton(f"Текущая ({this_monday.strftime('%d.%m')}–{(this_monday+timedelta(days=6)).strftime('%d.%m')})",
+                              callback_data="week_pick_0")],
+        [InlineKeyboardButton(f"Следующая ({next_monday.strftime('%d.%m')}–{(next_monday+timedelta(days=6)).strftime('%d.%m')})",
+                              callback_data="week_pick_1")],
+        [InlineKeyboardButton(f"Через неделю ({week_after.strftime('%d.%m')}–{(week_after+timedelta(days=6)).strftime('%d.%m')})",
+                              callback_data="week_pick_2")],
+        [InlineKeyboardButton("❌ Отмена", callback_data="week_cancel")],
+    ])
 
+    text = "📅 *На какую неделю составить расписание?*"
+    if update.callback_query:
+        await update.callback_query.message.reply_text(text, parse_mode='Markdown', reply_markup=kb)
+    else:
+        await update.message.reply_text(text, parse_mode='Markdown', reply_markup=kb)
+
+
+async def week_pick_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    data = query.data
+
+    if data == "week_cancel":
+        clear_state(context)
+        await query.edit_message_text("❌ Отменено.")
+        await query.message.reply_text("Главное меню:", reply_markup=main_menu_keyboard())
+        return
+
+    if data.startswith("week_pick_"):
+        weeks_ahead = int(data.split('_')[-1])
+        today = date.today()
+        this_monday = today - timedelta(days=today.weekday())
+        week_start = this_monday + timedelta(days=7 * weeks_ahead)
+
+        context.user_data['week_start'] = week_start
+        context.user_data['week_plan_idx'] = 0
+        context.user_data['week_plan_data'] = {}
+        context.user_data['state'] = 'week_plan'
+
+        await query.edit_message_text(f"📅 Начинаем с {week_start.strftime('%d.%m.%Y')}")
+        await ask_week_day(update, context)
 
 async def ask_week_day(update: Update, context: ContextTypes.DEFAULT_TYPE):
     idx = context.user_data.get('week_plan_idx', 0)
@@ -1886,6 +1928,7 @@ def main():
     application.add_handler(CallbackQueryHandler(summary_choice_callback, pattern='^sum_(my|all)$'))
     application.add_handler(CallbackQueryHandler(summary_callback, pattern='^(sum_|allsum_)(prev|next|now)$'))
     application.add_handler(CallbackQueryHandler(detach_callback, pattern='^detach_'))
+    application.add_handler(CallbackQueryHandler(week_pick_callback, pattern='^week_pick_'))
 
     # Парсинг группы
     application.add_handler(MessageHandler(
@@ -1903,8 +1946,8 @@ def main():
     application.job_queue.run_repeating(check_notifications, interval=5, first=5)
     application.job_queue.run_daily(
         morning_who,
-        time=dtime(hour=11, minute=30),
-        days=(1, 2, 3, 4, 5, 6)
+        time=dtime(hour=11, minute=50),
+        days=(1, 2, 3, 4, 5)
     )
 
     print("🤖 Бот запущен. Нажми Ctrl+C для остановки.")

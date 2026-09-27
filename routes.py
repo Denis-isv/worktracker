@@ -1437,7 +1437,6 @@ def admin_reject_schedule(schedule_id):
                             cal_month=request.args.get('cal_month'),
                             show_all=request.args.get('show_all', '0')))
 
-
 @app.route('/admin/approve_absence/<int:absence_id>')
 @login_required
 def admin_approve_absence(absence_id):
@@ -1494,7 +1493,6 @@ def admin_reject_absence(absence_id):
                             cal_year=request.args.get('cal_year'),
                             cal_month=request.args.get('cal_month'),
                             show_all=request.args.get('show_all', '0')))
-
 
 @app.route('/admin/approve_attendance/<int:attendance_id>')
 @login_required
