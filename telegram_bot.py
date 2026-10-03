@@ -26,6 +26,18 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# --- ИИ-парсер (опционально) ---
+try:
+    from ai_parser import get_ai_parser_from_env
+    AI_PARSER = get_ai_parser_from_env()
+    if AI_PARSER:
+        logger.info(f"✅ ИИ-парсер активирован: {AI_PARSER.model} @ {AI_PARSER.base_url}")
+    else:
+        logger.info("ℹ️ ИИ-парсер не настроен (AI_ENABLED=false или нет ключа)")
+except ImportError:
+    AI_PARSER = None
+    logger.info("ℹ️ ai_parser.py не найден — ИИ отключён")
+
 DAYS_RU_SHORT = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс']
 DAYS_RU_FULL = ['Понедельник', 'Вторник', 'Среда', 'Четверг', 'Пятница', 'Суббота', 'Воскресенье']
 MONTHS_RU_FULL = ['Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь',
@@ -213,6 +225,234 @@ def clear_state(context):
     for k in keys:
         context.user_data.pop(k, None)
 
+
+# ================== ИИ-РАЗБОР СООБЩЕНИЙ ==================
+def _ai_parse_date(s):
+    if not s:
+        return None
+    try:
+        return datetime.strptime(s, '%Y-%m-%d').date()
+    except (ValueError, TypeError):
+        return None
+
+
+def _ai_parse_time(s):
+    if not s:
+        return None
+    try:
+        h, m = s.split(':')
+        return parse_time_string(f"{h}:{m}")
+    except Exception:
+        return None
+
+
+async def save_ai_result(user, parsed, context):
+    """Сохраняет результат ИИ в БД. Возвращает текст ответа."""
+    action = parsed.get('action', 'unknown')
+    response = parsed.get('response', '')
+
+    if action == 'plan':
+        d = _ai_parse_date(parsed.get('date')) or (date.today() + timedelta(days=1))
+        start = _ai_parse_time(parsed.get('start'))
+        end = _ai_parse_time(parsed.get('end'))
+        tasks = parsed.get('tasks') or []
+        plan_text = '\n'.join(f"- {t}" for t in tasks) if tasks else None
+
+        if not start or not end:
+            return "⚠️ Не указано время. Напиши, например: «завтра с 10 до 18»."
+
+        existing = Schedule.query.filter_by(user_id=user.id, date=d).first()
+        if existing:
+            existing.planned_start = start
+            existing.planned_end = end
+            existing.is_day_off = False
+            existing.status = 'approved'
+            if plan_text:
+                existing.plan_text = plan_text
+        else:
+            sch = Schedule(
+                user_id=user.id, date=d,
+                planned_start=start, planned_end=end,
+                is_day_off=False, status='approved',
+                plan_text=plan_text,
+            )
+            db.session.add(sch)
+        db.session.commit()
+        txt = f"✅ План на {d.strftime('%d.%m.%Y')}: {start.strftime('%H:%M')}–{end.strftime('%H:%M')}"
+        if tasks:
+            txt += f"\n📝 Задачи: {len(tasks)}"
+        return txt
+
+    if action == 'fact':
+        d = _ai_parse_date(parsed.get('date')) or date.today()
+        start = _ai_parse_time(parsed.get('start'))
+        end = _ai_parse_time(parsed.get('end'))
+        eff = parsed.get('efficiency')
+        tasks = parsed.get('tasks') or []
+
+        if not start or not end:
+            return "⚠️ Не указано время. Напиши, например: «сегодня работал с 10 до 18»."
+
+        existing = Attendance.query.filter_by(user_id=user.id, date=d).first()
+        if existing:
+            return ("⚠️ На эту дату уже есть запись факта. "
+                    "Измени её через «📅 Моё расписание».")
+
+        eff_val = (float(eff) / 100) if eff else 1.0
+        sch = Schedule.query.filter_by(user_id=user.id, date=d, status='approved').first()
+        early = 0
+        if sch and sch.planned_start and not sch.is_day_off:
+            early = time_to_minutes(start) - time_to_minutes(sch.planned_start)
+        status = 'confirmed' if d == date.today() else 'pending'
+        att = Attendance(
+            user_id=user.id, date=d,
+            actual_start=start, actual_end=end,
+            efficiency=eff_val, early_start=early,
+            status=status,
+        )
+        if tasks:
+            att.note = '\n'.join(f"- {t}" for t in tasks)
+        db.session.add(att)
+        db.session.commit()
+
+        txt = (f"✅ Факт за {d.strftime('%d.%m.%Y')}: "
+               f"{start.strftime('%H:%M')}–{end.strftime('%H:%M')} "
+               f"(e% {int(eff_val * 100)})")
+        return txt
+
+    if action == 'note':
+        tasks = parsed.get('tasks') or []
+        if not tasks:
+            return "⚠️ Не понял, что именно ты сделал. Уточни."
+        note_text = '\n'.join(f"- {t}" for t in tasks)
+        d = _ai_parse_date(parsed.get('date')) or date.today()
+        att = Attendance.query.filter_by(user_id=user.id, date=d).first()
+        if not att:
+            return (f"⚠️ На {d.strftime('%d.%m.%Y')} нет записи факта. "
+                    f"Сначала напиши, сколько работал, например: "
+                    f"«сегодня с 10 до 18», а потом «сделал: отчёт, встреча».")
+        att.note = note_text
+        db.session.commit()
+        return f"✅ Записал {len(tasks)} задач в отчёт за {d.strftime('%d.%m.%Y')}"
+
+    if action == 'absence':
+        d_start = _ai_parse_date(parsed.get('date'))
+        d_end = _ai_parse_date(parsed.get('date_end')) or d_start
+        abs_type = parsed.get('absence_type', 'other')
+        if not d_start:
+            return "⚠️ Не понял даты. Напиши, например: «отпуск с 5 по 10 ноября»."
+        if abs_type not in ('vacation', 'sick', 'other'):
+            abs_type = 'other'
+        absence = Absence(
+            user_id=user.id, date_start=d_start, date_end=d_end,
+            type=abs_type, status='pending',
+        )
+        db.session.add(absence)
+        db.session.commit()
+        return (f"✅ Заявка на {ABS_TYPE_RU_SHORT.get(abs_type, abs_type)} "
+                f"{d_start.strftime('%d.%m.%Y')} – {d_end.strftime('%d.%m.%Y')}. "
+                f"Ждёт подтверждения администратора.")
+
+    if action == 'query':
+        qtype = parsed.get('query_type', 'summary')
+        if qtype == 'summary':
+            return summary_text(user, 0)
+        if qtype == 'schedule':
+            today = date.today()
+            ws = today - timedelta(days=today.weekday())
+            text, _ = _schedule_week_view_data(user, ws, 0)
+            return text
+        if qtype == 'who':
+            return who_text()
+        return "📊 Уточни, что показать: «итоги месяца», «расписание» или «кто работает»."
+
+    if action == 'chat':
+        return response or "😊 Чем помочь?"
+
+    if action == 'error':
+        return response
+
+    return response or ("🤔 Не понял. Напиши, например: "
+                        "«сегодня работал с 10 до 18» или "
+                        "«запиши: сделал отчёт и встречу».")
+
+
+async def ai_message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обработка свободного текста через ИИ. Возвращает True, если обработано."""
+    if not AI_PARSER:
+        return False
+
+    msg = update.message
+    chat = update.effective_chat
+    if not msg or not msg.text:
+        return False
+
+    text = msg.text.strip()
+    if not text:
+        return False
+
+    # Не мешаем активному диалогу с кнопками
+    if context.user_data.get('state'):
+        return False
+
+    # В группе — только по триггеру
+    if chat.type in ('group', 'supergroup'):
+        bot_username = context.bot.username
+        triggered = False
+        if bot_username:
+            for t in (f"@{bot_username}", f"@{bot_username.lower()}"):
+                if t in text:
+                    text = text.replace(t, '').strip()
+                    triggered = True
+                    break
+        if not triggered:
+            for prefix in ('ии,', 'ии ', 'бот,', 'бот ', 'запиши ', 'работал ', 'планирую '):
+                if text.lower().startswith(prefix):
+                    triggered = True
+                    break
+        if not triggered:
+            return False
+    else:
+        if text.startswith('/'):
+            return False
+        btn = ['📅 Моё расписание', '👤 Мой профиль', '⏰ Фактическое время',
+               '🏖 Заявка на отпуск', '📂 Мои заявки', '👥 Кто работает',
+               '📊 Итоги месяца', '👥 Расписание всех', '📋 На неделю',
+               '❓ Помощь', '🔓 Отвязать аккаунт', CANCEL_TEXT]
+        if text in btn:
+            return False
+
+    with app.app_context():
+        user = get_user_by_chat(chat.id)
+        if not user:
+            return False
+
+        try:
+            await msg.chat.send_action("typing")
+        except Exception:
+            pass
+
+        parsed = await AI_PARSER.analyze(
+            text=text,
+            user_full_name=user.full_name,
+        )
+
+        try:
+            result_text = await save_ai_result(user, parsed, context)
+        except Exception as e:
+            logger.exception(f"AI save error: {e}")
+            result_text = f"⚠️ Ошибка сохранения: {e}"
+
+    # Отвечаем
+    if chat.type in ('group', 'supergroup'):
+        short = result_text.split('\n')[0]
+        await msg.reply_text(short)
+    else:
+        try:
+            await msg.reply_text(result_text, parse_mode='HTML')
+        except Exception:
+            await msg.reply_text(result_text)
+    return True
 
 def month_offset_range(offset_months):
     today = date.today()
@@ -3520,8 +3760,19 @@ async def text_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
+        # Пробуем ИИ-разбор для свободного текста
+    if AI_PARSER:
+        handled = await ai_message_handler(update, context)
+        if handled:
+            return
+
     await update.message.reply_text(
-        "🤔 Не понимаю команду. Используй кнопки внизу 👇",
+        "🤔 Не понимаю команду. Используй кнопки внизу 👇\n"
+        "Или напиши свободным текстом, например:\n"
+        "• <i>сегодня работал с 10 до 18</i>\n"
+        "• <i>завтра с 9 до 17, задачи: отчёт, встреча</i>\n"
+        "• <i>хочу в отпуск с 5 по 10 ноября</i>",
+        parse_mode='HTML',
         reply_markup=main_menu_keyboard()
     )
 
@@ -3801,7 +4052,7 @@ def main():
     # «Моё расписание» — картинка/текст
     application.add_handler(CallbackQueryHandler(mysch_view_callback, pattern=r'^mysch_(text|image)$'))
     application.add_handler(CallbackQueryHandler(mysch_img_nav_callback,
-                                                 pattern=r'^mysch_img_(prev|now|next)$'))
+    pattern=r'^mysch_img_(prev|now|next)$'))
 
     # Неделя / день
     application.add_handler(CallbackQueryHandler(sched_week_callback, pattern=r'^sched_(week_-?\d+|noop)$'))
@@ -3809,27 +4060,27 @@ def main():
 
     # Очистка дня (полная)
     application.add_handler(CallbackQueryHandler(sched_clear_yes_callback,
-                                                 pattern=r'^sched_clear_yes_'))
+    pattern=r'^sched_clear_yes_'))
     application.add_handler(CallbackQueryHandler(sched_clear_callback,
-                                                 pattern=r'^sched_clear_\d'))
+    pattern=r'^sched_clear_\d'))
             
     # Очистка всей недели
     application.add_handler(CallbackQueryHandler(sched_week_clear_yes_callback,
-                                                 pattern=r'^mysch_clearweek_yes_'))
+    pattern=r'^mysch_clearweek_yes_'))
     application.add_handler(CallbackQueryHandler(sched_week_clear_callback,
-                                                 pattern=r'^mysch_clearweek_'))
+    pattern=r'^mysch_clearweek_'))
 
     # Задачи на день (план)
     application.add_handler(CallbackQueryHandler(sched_tasks_action_callback,
-                                                 pattern=r'^sched_tasks_(add|replace|clear)$'))
+    pattern=r'^sched_tasks_(add|replace|clear)$'))
     application.add_handler(CallbackQueryHandler(sched_tasks_callback,
-                                                 pattern=r'^sched_tasks_\d'))
+    pattern=r'^sched_tasks_\d'))
 
     # «Что сделал» (факт)
     application.add_handler(CallbackQueryHandler(sched_note_action_callback,
-                                                 pattern=r'^sched_note_(add|replace|clear)$'))
+    pattern=r'^sched_note_(add|replace|clear)$'))
     application.add_handler(CallbackQueryHandler(sched_note_callback,
-                                                 pattern=r'^sched_note_\d'))
+    pattern=r'^sched_note_\d'))
 
     # Время / выходной / warn
     application.add_handler(CallbackQueryHandler(sched_time_callback, pattern=r'^sched_time_'))
@@ -3843,20 +4094,20 @@ def main():
 
     # Прочие
     application.add_handler(CallbackQueryHandler(fact_date_callback,
-                                                 pattern=r'^fact_(today|yesterday)$'))
+    pattern=r'^fact_(today|yesterday)$'))
     application.add_handler(CallbackQueryHandler(fact_conflict_callback,
-                                                 pattern=r'^fact_(replace|keep)$'))
+    pattern=r'^fact_(replace|keep)$'))
     application.add_handler(CallbackQueryHandler(abs_type_callback,
-                                                 pattern=r'^abs_(vacation|sick|other)$'))
+    pattern=r'^abs_(vacation|sick|other)$'))
     application.add_handler(CallbackQueryHandler(abs_skip_file_callback, pattern=r'^abs_skip_file$'))
     application.add_handler(CallbackQueryHandler(all_week_callback, pattern=r'^allweek_'))
     application.add_handler(CallbackQueryHandler(
         week_plan_callback,
-        pattern=r'^week_(full_day|custom|dayoff|skip|cancel|overwrite)$'))
+    pattern=r'^week_(full_day|custom|dayoff|skip|cancel|overwrite)$'))
     application.add_handler(CallbackQueryHandler(summary_choice_callback,
-                                                 pattern=r'^sum_(my|all)$'))
+    pattern=r'^sum_(my|all)$'))
     application.add_handler(CallbackQueryHandler(summary_callback,
-                                                 pattern=r'^(sum_|allsum_)(prev|next|now)$'))
+    pattern=r'^(sum_|allsum_)(prev|next|now)$'))
     application.add_handler(CallbackQueryHandler(detach_callback, pattern=r'^detach_'))
     application.add_handler(CallbackQueryHandler(week_pick_callback, pattern=r'^week_pick_'))
 
@@ -3869,6 +4120,12 @@ def main():
         filters.ChatType.GROUPS & filters.TEXT & ~filters.COMMAND,
         group_parser
     ), group=-1)
+
+        # ИИ в группе — реагирует только на @botname или ключевые слова
+    application.add_handler(MessageHandler(
+        filters.ChatType.GROUPS & filters.TEXT & ~filters.COMMAND,
+        ai_message_handler
+    ), group=0)
 
     # Личка
     application.add_handler(MessageHandler(filters.Document.ALL | filters.PHOTO, text_router))
