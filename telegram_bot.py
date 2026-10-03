@@ -298,7 +298,29 @@ async def save_ai_result(user, parsed, context):
             return ("⚠️ На эту дату уже есть запись факта. "
                     "Измени её через «📅 Моё расписание».")
 
-        eff_val = (float(eff) / 100) if eff else 1.0
+        # Если эффективность не указана — спрашиваем и сохраняем черновик
+        if eff is None:
+            context.user_data['pending_ai_fact'] = {
+                'user_id': user.id,
+                'date': d.isoformat(),
+                'start': start.strftime('%H:%M'),
+                'end': end.strftime('%H:%M'),
+                'tasks': tasks,
+            }
+            return (
+                f"📊 Записал факт за {d.strftime('%d.%m.%Y')}: "
+                f"{start.strftime('%H:%M')}–{end.strftime('%H:%M')}\n\n"
+                f"Какая <b>эффективность</b>? Пришли число от 0 до 100.\n"
+                f"<i>Например: 85</i>"
+            )
+
+        try:
+            eff_val = float(eff) / 100
+        except (ValueError, TypeError):
+            eff_val = 1.0
+        if not (0 <= eff_val <= 1):
+            eff_val = 1.0
+
         sch = Schedule.query.filter_by(user_id=user.id, date=d, status='approved').first()
         early = 0
         if sch and sch.planned_start and not sch.is_day_off:
@@ -379,9 +401,6 @@ async def save_ai_result(user, parsed, context):
 
 async def ai_message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обработка свободного текста через ИИ. Возвращает True, если обработано."""
-    if not AI_PARSER:
-        return False
-
     msg = update.message
     chat = update.effective_chat
     if not msg or not msg.text:
@@ -389,6 +408,70 @@ async def ai_message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
     text = msg.text.strip()
     if not text:
+        return False
+
+    # ============ Проверяем: ждём ли ответ по эффективности от ИИ ============
+    pending = context.user_data.get('pending_ai_fact')
+    if pending:
+        m = re.match(r'^\s*(\d{1,3})\s*%?\s*$', text)
+        if m:
+            eff_val = int(m.group(1))
+            if not (0 <= eff_val <= 100):
+                await msg.reply_text("⚠️ Эффективность должна быть от 0 до 100.")
+                return True
+
+            with app.app_context():
+                user = get_user_by_chat(chat.id)
+                if not user:
+                    context.user_data.pop('pending_ai_fact', None)
+                    return True
+
+                try:
+                    d = datetime.strptime(pending['date'], '%Y-%m-%d').date()
+                    start = parse_time_string(pending['start'])
+                    end = parse_time_string(pending['end'])
+                except Exception as e:
+                    logger.error(f"Ошибка парсинга pending_ai_fact: {e}")
+                    context.user_data.pop('pending_ai_fact', None)
+                    await msg.reply_text("⚠️ Данные потеряны. Пришли факт заново.")
+                    return True
+
+                tasks = pending.get('tasks') or []
+
+                sch = Schedule.query.filter_by(
+                    user_id=user.id, date=d, status='approved'
+                ).first()
+                early = 0
+                if sch and sch.planned_start and not sch.is_day_off:
+                    early = time_to_minutes(start) - time_to_minutes(sch.planned_start)
+                status = 'confirmed' if d == date.today() else 'pending'
+                att = Attendance(
+                    user_id=user.id, date=d,
+                    actual_start=start, actual_end=end,
+                    efficiency=eff_val / 100, early_start=early,
+                    status=status,
+                )
+                if tasks:
+                    att.note = '\n'.join(f"- {t}" for t in tasks)
+                db.session.add(att)
+                db.session.commit()
+
+            context.user_data.pop('pending_ai_fact', None)
+            await msg.reply_text(
+                f"✅ Факт за {d.strftime('%d.%m.%Y')} сохранён: "
+                f"{start.strftime('%H:%M')}–{end.strftime('%H:%M')}, e% {eff_val}"
+            )
+            return True
+
+        # Отмена
+        if text.lower() in ('отмена', 'cancel', '/cancel'):
+            context.user_data.pop('pending_ai_fact', None)
+            await msg.reply_text("Отменено. Факт не сохранён.")
+            return True
+        # Если не число и не отмена — пропускаем дальше (вдруг другая команда)
+
+    # ============ Основная логика через ИИ ============
+    if not AI_PARSER:
         return False
 
     # Не мешаем активному диалогу с кнопками
@@ -413,6 +496,7 @@ async def ai_message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
         if not triggered:
             return False
     else:
+        # В личке — не реагируем на команды и кнопки меню
         if text.startswith('/'):
             return False
         btn = ['📅 Моё расписание', '👤 Мой профиль', '⏰ Фактическое время',
